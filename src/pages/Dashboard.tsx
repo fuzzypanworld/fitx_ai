@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { Calendar, Dumbbell, Music, Settings } from "lucide-react";
+import WorkoutTracker from "@/components/WorkoutTracker";
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
@@ -21,7 +22,9 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto">
+      <main className="max-w-7xl mx-auto space-y-6">
+        <WorkoutTracker />
+        
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Today's Workout */}
           <Card className="glass col-span-2">

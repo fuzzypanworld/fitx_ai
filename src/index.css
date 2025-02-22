@@ -66,4 +66,8 @@
       transform: translateY(0);
     }
   }
+
+  .mirror {
+    transform: scaleX(-1);
+  }
 }
