@@ -6,3 +6,6 @@ verify_jwt = true
 
 [functions.generate-workout-music]
 verify_jwt = true
+
+[functions.voice-chat]
+verify_jwt = true
