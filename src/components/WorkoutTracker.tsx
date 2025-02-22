@@ -92,25 +92,51 @@ const WorkoutTracker = () => {
 
   // Detect push-ups based on pose
   const isPushUpPosition = (keypoints: posenet.Keypoint[]) => {
+    // Get relevant keypoints
+    const nose = keypoints.find(kp => kp.part === 'nose');
     const shoulders = keypoints.filter(kp => 
       kp.part === 'leftShoulder' || kp.part === 'rightShoulder'
     );
     const elbows = keypoints.filter(kp => 
       kp.part === 'leftElbow' || kp.part === 'rightElbow'
     );
+    const wrists = keypoints.filter(kp => 
+      kp.part === 'leftWrist' || kp.part === 'rightWrist'
+    );
     
-    if (shoulders.length === 2 && elbows.length === 2) {
-      // Calculate average y positions
-      const shoulderY = (shoulders[0].position.y + shoulders[1].position.y) / 2;
-      const elbowY = (elbows[0].position.y + elbows[1].position.y) / 2;
-      
-      // If elbows are lower than shoulders, likely in push-up position
-      return elbowY > shoulderY;
+    if (!nose || shoulders.length !== 2 || elbows.length !== 2 || wrists.length !== 2) {
+      return false;
     }
-    return false;
+
+    // Calculate average positions
+    const shoulderY = (shoulders[0].position.y + shoulders[1].position.y) / 2;
+    const elbowY = (elbows[0].position.y + elbows[1].position.y) / 2;
+    const wristY = (wrists[0].position.y + wrists[1].position.y) / 2;
+    
+    // Check if nose is near shoulder level (down position)
+    const isNoseNearShoulders = Math.abs(nose.position.y - shoulderY) < 100;
+    
+    // Check if arms are in proper push-up position
+    const areArmsProperlyPositioned = 
+      Math.abs(elbowY - wristY) < 50 && // Elbows and wrists roughly same height
+      shoulders.every(s => s.score > 0.5) && // High confidence in shoulder detection
+      elbows.every(e => e.score > 0.5); // High confidence in elbow detection
+    
+    // Log positions for debugging
+    console.log('Pose Detection:', {
+      noseY: nose.position.y,
+      shoulderY,
+      elbowY,
+      wristY,
+      isNoseNearShoulders,
+      areArmsProperlyPositioned
+    });
+
+    return isNoseNearShoulders && areArmsProperlyPositioned;
   };
 
   let lastPushUpState = false;
+  let pushUpStartTime = 0;
   
   // Main pose detection loop
   const detectPose = async () => {
@@ -120,8 +146,9 @@ const WorkoutTracker = () => {
       const pose = await net.estimateSinglePose(videoRef.current);
       const isPushUp = isPushUpPosition(pose.keypoints);
       
-      // Count push-up when transitioning from down to up position
-      if (isPushUp && !lastPushUpState) {
+      // Count push-up with timing check
+      const currentTime = Date.now();
+      if (isPushUp && !lastPushUpState && (!pushUpStartTime || currentTime - pushUpStartTime > 1000)) {
         setExercises(prev => 
           prev.map(ex => 
             ex.name === 'Push-ups' 
@@ -129,6 +156,8 @@ const WorkoutTracker = () => {
               : ex
           )
         );
+        pushUpStartTime = currentTime;
+        console.log('Push-up counted!');
       }
       lastPushUpState = isPushUp;
 
