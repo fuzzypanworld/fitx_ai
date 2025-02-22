@@ -35,12 +35,17 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
 
         recognitionRef.current.onend = () => {
           console.log('Speech recognition ended');
-          setIsRecording(false);
+          // Don't automatically set isRecording to false here
           setIsSpeaking(false);
-          // Automatically restart if we're still supposed to be recording
-          if (isRecording && recognitionRef.current) {
+          // Only restart if we're supposed to be recording and not processing
+          if (isRecording && !isProcessing && !isAISpeaking && recognitionRef.current) {
             console.log('Restarting speech recognition');
-            recognitionRef.current.start();
+            try {
+              recognitionRef.current.start();
+            } catch (error) {
+              console.error('Error restarting recognition:', error);
+              setIsRecording(false);
+            }
           }
         };
 
@@ -92,15 +97,16 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         variant: "destructive",
       });
     }
-  }, [toast, isRecording]);
+  }, [toast, isRecording, isProcessing, isAISpeaking]);
 
   const startRecording = () => {
-    if (recognitionRef.current) {
+    if (recognitionRef.current && !isRecording) {
       try {
         recognitionRef.current.start();
         console.log('Starting speech recognition');
       } catch (error) {
         console.error('Error starting recognition:', error);
+        setIsRecording(false);
       }
     }
   };
@@ -108,6 +114,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const stopRecording = () => {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
+      setIsRecording(false);
       console.log('Stopping speech recognition');
     }
   };
@@ -127,10 +134,15 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       utterance.onstart = () => setIsAISpeaking(true);
       utterance.onend = () => {
         setIsAISpeaking(false);
-        // Resume recognition after AI finishes speaking
-        if (isRecording && recognitionRef.current) {
+        // Resume recognition after AI finishes speaking if still in recording mode
+        if (isRecording && recognitionRef.current && !isProcessing) {
           console.log('Resuming speech recognition after AI response');
-          recognitionRef.current.start();
+          try {
+            recognitionRef.current.start();
+          } catch (error) {
+            console.error('Error resuming recognition:', error);
+            setIsRecording(false);
+          }
         }
       };
       
@@ -196,7 +208,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
           <Button
             size="lg"
             onClick={startRecording}
-            disabled={isProcessing}
+            disabled={isProcessing || isAISpeaking}
             className="rounded-full w-14 h-14 p-0 bg-blue-500 hover:bg-blue-600"
           >
             <Mic className="h-6 w-6" />
