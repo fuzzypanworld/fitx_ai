@@ -41,17 +41,28 @@ export default function Dashboard() {
     try {
       setIsGenerating(true);
       
-      // Get user profile to check their preferences
-      const { data: profile } = await supabase
+      // First, prompt for preferences
+      const { data: existingProfile } = await supabase
         .from('user_profiles')
         .select('workout_goal, experience_level')
         .eq('id', user?.id)
         .single();
 
+      // Update preferences before generating
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .upsert({
+          id: user?.id,
+          workout_goal: existingProfile?.workout_goal || 'weight-loss',
+          experience_level: existingProfile?.experience_level || 'beginner',
+        }, { onConflict: 'id' })
+        .select()
+        .single();
+
       if (!profile) {
         toast({
-          title: "Profile not found",
-          description: "Please complete your profile setup first",
+          title: "Error",
+          description: "Could not update profile",
           variant: "destructive",
         });
         return;

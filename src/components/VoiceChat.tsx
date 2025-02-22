@@ -14,179 +14,118 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<NodeJS.Timeout>();
-  const silenceTimeoutRef = useRef<NodeJS.Timeout>();
-  const audioContextRef = useRef<AudioContext>();
-  const analyserRef = useRef<AnalyserNode>();
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
   const { toast } = useToast();
 
-  const detectSilence = (dataArray: Uint8Array) => {
-    const sum = dataArray.reduce((a, b) => a + b, 0);
-    const average = sum / dataArray.length;
-    const isSpeakingNow = average > 20; // Adjust threshold as needed
-    setIsSpeaking(isSpeakingNow);
+  useEffect(() => {
+    // Initialize speech recognition
+    if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
 
-    if (isSpeakingNow && silenceTimeoutRef.current) {
-      clearTimeout(silenceTimeoutRef.current);
-    }
-
-    if (!isSpeakingNow && !silenceTimeoutRef.current && isRecording) {
-      silenceTimeoutRef.current = setTimeout(() => {
-        stopRecording();
-      }, 1500); // Stop after 1.5 seconds of silence
-    }
-  };
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      // Set up audio analysis
-      audioContextRef.current = new AudioContext();
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      const source = audioContextRef.current.createMediaStreamSource(stream);
-      source.connect(analyserRef.current);
-      analyserRef.current.fftSize = 256;
-
-      // Start analyzing audio
-      const bufferLength = analyserRef.current.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-      
-      const checkAudio = () => {
-        if (isRecording && analyserRef.current) {
-          analyserRef.current.getByteFrequencyData(dataArray);
-          detectSilence(dataArray);
-          requestAnimationFrame(checkAudio);
-        }
-      };
-      
-      checkAudio();
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+      recognitionRef.current.onstart = () => {
+        setIsRecording(true);
+        setIsSpeaking(false);
       };
 
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await processAudio(audioBlob);
+      recognitionRef.current.onend = () => {
+        setIsRecording(false);
+        setIsSpeaking(false);
       };
 
-      mediaRecorder.start(100); // Collect data every 100ms
-      setIsRecording(true);
-      
-      setTimeLeft(360);
-      timerRef.current = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            stopRecording();
-            return 0;
-          }
-          return prev - 1;
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        toast({
+          title: "Error",
+          description: "Speech recognition failed. Please try again.",
+          variant: "destructive",
         });
-      }, 1000);
+        setIsRecording(false);
+      };
 
-    } catch (error) {
-      console.error('Error accessing microphone:', error);
+      recognitionRef.current.onresult = async (event) => {
+        const transcript = Array.from(event.results)
+          .map(result => result[0].transcript)
+          .join('');
+
+        setIsSpeaking(true);
+
+        if (event.results[0].isFinal) {
+          await processText(transcript);
+        }
+      };
+
+      // Initialize speech synthesis
+      synthRef.current = window.speechSynthesis;
+    } else {
       toast({
         title: "Error",
-        description: "Could not access microphone",
+        description: "Speech recognition is not supported in your browser",
         variant: "destructive",
       });
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+      if (synthRef.current) {
+        synthRef.current.cancel();
+      }
+    };
+  }, [toast]);
+
+  const startRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.start();
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      setIsRecording(false);
-      
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
-      }
-      setTimeLeft(0);
-      
-      // Clean up audio context
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
     }
   };
 
-  const processAudio = async (audioBlob: Blob) => {
+  const processText = async (text: string) => {
     try {
       setIsProcessing(true);
-      
-      const base64Audio = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (typeof reader.result === 'string') {
-            const base64 = reader.result.split(',')[1];
-            resolve(base64);
-          }
-        };
-        reader.readAsDataURL(audioBlob);
-      });
+      stopRecording();
 
       const { data, error } = await supabase.functions.invoke('voice-chat', {
-        body: { audioContent: base64Audio }
+        body: { text }
       });
 
       if (error) throw error;
 
-      // Play the response audio
-      const audio = new Audio(`data:audio/mpeg;base64,${data.audioContent}`);
+      // Use Web Speech Synthesis for the response
+      const utterance = new SpeechSynthesisUtterance(data.responseText);
+      utterance.onstart = () => setIsAISpeaking(true);
+      utterance.onend = () => setIsAISpeaking(false);
       
-      audio.onplay = () => setIsAISpeaking(true);
-      audio.onended = () => setIsAISpeaking(false);
-      
-      await audio.play();
+      if (synthRef.current) {
+        synthRef.current.speak(utterance);
+      }
 
       toast({
         title: "You said:",
-        description: data.transcribedText,
+        description: text,
       });
 
     } catch (error) {
-      console.error('Error processing audio:', error);
+      console.error('Error processing text:', error);
       toast({
         title: "Error",
-        description: "Failed to process audio",
+        description: "Failed to process your message",
         variant: "destructive",
       });
     } finally {
       setIsProcessing(false);
     }
   };
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (mediaRecorderRef.current) {
-        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      }
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-      if (audioContextRef.current) audioContextRef.current.close();
-    };
-  }, []);
 
   return (
     <div className="fixed inset-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-50 flex flex-col items-center justify-center">
@@ -214,12 +153,6 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
           }}
         />
       </div>
-
-      {timeLeft > 0 && (
-        <div className="mb-4 text-sm text-muted-foreground">
-          {formatTime(timeLeft)} left
-        </div>
-      )}
 
       <div className="flex gap-4">
         {isRecording ? (
