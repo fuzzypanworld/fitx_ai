@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/components/ui/use-toast";
 
 interface MeditationDialogProps {
   open: boolean;
@@ -16,10 +17,19 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
   const [phase, setPhase] = useState<"inhale" | "hold" | "exhale">("inhale");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isStarted, setIsStarted] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (open && !audioRef.current) {
       audioRef.current = new Audio();
+      audioRef.current.onerror = (e) => {
+        console.error('Audio error:', e);
+        toast({
+          title: "Error",
+          description: "Failed to play audio. Please try again.",
+          variant: "destructive",
+        });
+      };
     }
     return () => {
       if (audioRef.current) {
@@ -34,26 +44,46 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
     setCurrentLap(0);
     
     try {
-      // Initialize text-to-speech using Eleven Labs
+      console.log("Starting meditation session...");
       const introText = "Welcome to your meditation session. This will help you calm your mind. Let's begin with deep breathing exercises.";
+      
       const { data, error } = await supabase.functions.invoke('text-to-speech', {
         body: { 
           text: introText,
-          voice: "Charlie", // Using a calming male voice
         }
       });
 
-      if (error) throw error;
+      console.log("Text-to-speech response:", { data, error });
 
-      if (audioRef.current && data.audioContent) {
+      if (error) {
+        console.error('Text-to-speech error:', error);
+        throw error;
+      }
+
+      if (audioRef.current && data?.audioContent) {
+        console.log("Setting up audio source...");
         audioRef.current.src = `data:audio/mp3;base64,${data.audioContent}`;
-        await audioRef.current.play();
         
-        // Start breathing cycle after intro
-        startBreathingCycle();
+        try {
+          await audioRef.current.play();
+          console.log("Audio started playing");
+          startBreathingCycle();
+        } catch (playError) {
+          console.error('Audio playback error:', playError);
+          throw playError;
+        }
+      } else {
+        console.error('No audio content received');
+        throw new Error('No audio content received');
       }
     } catch (error) {
       console.error('Error starting meditation:', error);
+      toast({
+        title: "Error",
+        description: "Failed to start meditation. Please try again.",
+        variant: "destructive",
+      });
+      setIsStarted(false);
     }
   };
 
@@ -94,21 +124,36 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
 
   const playAudio = async (text: string) => {
     try {
+      console.log("Playing audio for text:", text);
+      
       const { data, error } = await supabase.functions.invoke('text-to-speech', {
         body: { 
           text,
-          voice: "Charlie",
         }
       });
 
-      if (error) throw error;
+      console.log("Text-to-speech response:", { data, error });
 
-      if (audioRef.current && data.audioContent) {
+      if (error) {
+        console.error('Text-to-speech error:', error);
+        throw error;
+      }
+
+      if (audioRef.current && data?.audioContent) {
         audioRef.current.src = `data:audio/mp3;base64,${data.audioContent}`;
         await audioRef.current.play();
+        console.log("Audio played successfully");
+      } else {
+        console.error('No audio content received');
+        throw new Error('No audio content received');
       }
     } catch (error) {
       console.error('Error playing audio:', error);
+      toast({
+        title: "Error",
+        description: "Failed to play audio guidance. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
