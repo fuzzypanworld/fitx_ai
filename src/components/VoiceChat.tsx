@@ -28,13 +28,20 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         recognitionRef.current.interimResults = true;
 
         recognitionRef.current.onstart = () => {
+          console.log('Speech recognition started');
           setIsRecording(true);
           setIsSpeaking(false);
         };
 
         recognitionRef.current.onend = () => {
+          console.log('Speech recognition ended');
           setIsRecording(false);
           setIsSpeaking(false);
+          // Automatically restart if we're still supposed to be recording
+          if (isRecording && recognitionRef.current) {
+            console.log('Restarting speech recognition');
+            recognitionRef.current.start();
+          }
         };
 
         recognitionRef.current.onerror = (event) => {
@@ -85,25 +92,30 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         variant: "destructive",
       });
     }
-  }, [toast]);
+  }, [toast, isRecording]);
 
   const startRecording = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.start();
+      try {
+        recognitionRef.current.start();
+        console.log('Starting speech recognition');
+      } catch (error) {
+        console.error('Error starting recognition:', error);
+      }
     }
   };
 
   const stopRecording = () => {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
+      console.log('Stopping speech recognition');
     }
   };
 
   const processText = async (text: string) => {
     try {
       setIsProcessing(true);
-      stopRecording();
-
+      
       const { data, error } = await supabase.functions.invoke('voice-chat', {
         body: { text }
       });
@@ -113,7 +125,14 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       // Use Web Speech Synthesis for the response
       const utterance = new SpeechSynthesisUtterance(data.responseText);
       utterance.onstart = () => setIsAISpeaking(true);
-      utterance.onend = () => setIsAISpeaking(false);
+      utterance.onend = () => {
+        setIsAISpeaking(false);
+        // Resume recognition after AI finishes speaking
+        if (isRecording && recognitionRef.current) {
+          console.log('Resuming speech recognition after AI response');
+          recognitionRef.current.start();
+        }
+      };
       
       if (synthRef.current) {
         synthRef.current.speak(utterance);
