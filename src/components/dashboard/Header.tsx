@@ -14,7 +14,7 @@ export const Header = ({ userName, onSignOut }: HeaderProps) => {
         <img 
           src="public/lovable-uploads/c21a4c24-1f88-4ee0-953e-3a4b05f263bd.png" 
           alt="FitX AI" 
-          className="h-50" 
+          className="h-10" 
         />
         <h1 className="text-2xl font-bold">Welcome, {userName || "Friend"}!</h1>
       </div>
