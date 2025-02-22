@@ -70,8 +70,15 @@ export default function Index() {
   return (
     <div className="min-h-screen w-full px-4 py-8 md:py-16">
       <main className="max-w-6xl mx-auto space-y-16">
-        {/* Hero Section */}
+        {/* Logo and Hero Section */}
         <section className="text-center space-y-6">
+          <div className="flex justify-center mb-8">
+            <img 
+              src="/lovable-uploads/56a2d4d8-a1f6-49fc-9a37-3b860f592f47.png"
+              alt="FitX Logo"
+              className="h-20 w-auto"
+            />
+          </div>
           <h1 className="text-4xl md:text-6xl font-bold tracking-tight">
             Your AI-Powered
             <br />
