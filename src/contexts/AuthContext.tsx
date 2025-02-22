@@ -31,36 +31,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        updateUserProfile(session.user);
-      }
-      setLoading(false);
-    });
+    // Check active session and subscribe to auth changes
+    const initAuth = async () => {
+      try {
+        // Get initial session
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          await updateUserProfile(session.user);
+        }
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        updateUserProfile(session.user);
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
-    });
+        // Set up auth state listener
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+          console.log("Auth state changed:", event, session?.user?.id);
+          
+          if (session?.user) {
+            await updateUserProfile(session.user);
+          } else {
+            setUser(null);
+            navigate('/auth');
+          }
+        });
 
-    return () => subscription.unsubscribe();
-  }, []);
+        setLoading(false);
+        return () => {
+          subscription.unsubscribe();
+        };
+      } catch (error) {
+        console.error("Error initializing auth:", error);
+        setLoading(false);
+      }
+    };
+
+    initAuth();
+  }, [navigate]);
 
   const updateUserProfile = async (authUser: User) => {
     try {
+      console.log("Updating user profile for:", authUser.id);
+      
       // First try to get the profile data
       const { data: profiles, error } = await supabase
         .from('user_profiles')
         .select('*')
-        .eq('id', authUser.id);
+        .eq('id', authUser.id)
+        .single();
 
       if (error) {
         console.error('Error fetching user profile:', error);
@@ -68,7 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Get the first profile or use default values
-      const profile = profiles?.[0];
+      const profile = profiles || {
+        id: authUser.id,
+        full_name: authUser.user_metadata?.full_name,
+        is_premium: false
+      };
 
       setUser({
         id: authUser.id,
@@ -79,6 +98,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         experienceLevel: profile?.experience_level,
         workoutFrequency: profile?.workout_frequency,
       });
+      
+      // If we're on the auth page and have a user, redirect to dashboard
+      if (window.location.pathname === '/auth') {
+        navigate('/dashboard');
+      }
     } catch (error) {
       console.error('Error updating user profile:', error);
     }
@@ -143,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
 
       setUser(null);
-      navigate("/");
+      navigate("/auth");
       toast({
         title: "Signed out",
         description: "You've been successfully signed out.",

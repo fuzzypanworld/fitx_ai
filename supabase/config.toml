@@ -3,3 +3,6 @@ project_id = "olcnfmrixglengxpiexf"
 
 [functions.generate-workout]
 verify_jwt = true
+
+[functions.generate-workout-music]
+verify_jwt = true
