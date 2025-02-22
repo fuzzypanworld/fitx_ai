@@ -15,29 +15,35 @@ serve(async (req) => {
   try {
     const { audioContent } = await req.json();
     
-    // Create form data for Whisper API
-    const formData = new FormData();
-    const audioBlob = await fetch(`data:audio/webm;base64,${audioContent}`).then(r => r.blob());
-    formData.append('file', audioBlob, 'audio.webm');
-    formData.append('model', 'whisper-1');
-
-    // 1. Convert audio to text using Whisper
-    const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    // 1. Convert audio to text using Google Speech-to-Text
+    const speechToTextResponse = await fetch('https://speech.googleapis.com/v1/speech:recognize', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+        'Authorization': `Bearer ${Deno.env.get('GOOGLE_API_KEY')}`,
+        'Content-Type': 'application/json',
       },
-      body: formData
+      body: JSON.stringify({
+        config: {
+          encoding: 'WEBM_OPUS',
+          sampleRateHertz: 48000,
+          languageCode: 'en-US',
+          model: 'default',
+        },
+        audio: {
+          content: audioContent,
+        },
+      }),
     });
 
-    if (!whisperResponse.ok) {
-      throw new Error('Failed to transcribe audio');
+    if (!speechToTextResponse.ok) {
+      throw new Error('Failed to transcribe audio with Google Speech-to-Text');
     }
 
-    const { text: transcribedText } = await whisperResponse.json();
+    const { results } = await speechToTextResponse.json();
+    const transcribedText = results[0]?.alternatives[0]?.transcript || '';
     console.log('Transcribed text:', transcribedText);
 
-    // 2. Get response from Gemini with fitness context
+    // 2. Get response from Gemini
     const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') || '');
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
@@ -49,34 +55,25 @@ serve(async (req) => {
     const responseText = response.text();
     console.log('Gemini response:', responseText);
 
-    // 3. Convert response to speech using ElevenLabs
-    const voiceId = 'pNInz6obpgDQGcFmaJgB'; // Using a consistent voice
-    const elevenlabsResponse = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      {
-        method: 'POST',
-        headers: {
-          'Accept': 'audio/mpeg',
-          'Content-Type': 'application/json',
-          'xi-api-key': Deno.env.get('ELEVENLABS_API_KEY') || '',
-        },
-        body: JSON.stringify({
-          text: responseText,
-          model_id: 'eleven_multilingual_v2',
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-          },
-        }),
-      }
-    );
+    // 3. Convert response to speech using Google Text-to-Speech
+    const textToSpeechResponse = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${Deno.env.get('GOOGLE_API_KEY')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: { text: responseText },
+        voice: { languageCode: 'en-US', name: 'en-US-Neural2-D' },
+        audioConfig: { audioEncoding: 'MP3' },
+      }),
+    });
 
-    if (!elevenlabsResponse.ok) {
+    if (!textToSpeechResponse.ok) {
       throw new Error('Failed to convert text to speech');
     }
 
-    const audioBuffer = await elevenlabsResponse.arrayBuffer();
-    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioBuffer)));
+    const { audioContent: base64Audio } = await textToSpeechResponse.json();
 
     return new Response(
       JSON.stringify({
