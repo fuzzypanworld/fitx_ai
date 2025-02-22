@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { MeditationDialog } from "@/components/meditation/MeditationDialog";
 
 interface WorkoutData {
   title: string;
@@ -39,6 +40,7 @@ export default function Dashboard() {
   const [workout, setWorkout] = useState<WorkoutData | null>(null);
   const [showVoiceChat, setShowVoiceChat] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
+  const [showMeditation, setShowMeditation] = useState(false);
   const [formData, setFormData] = useState<PreferencesFormData>({
     age: "",
     goal: "weight-loss",
@@ -142,7 +144,6 @@ export default function Dashboard() {
 
       if (error) throw error;
 
-      // Show progress in a toast notification
       const completedWorkouts = data.length;
       toast({
         title: "Progress Update",
@@ -159,33 +160,16 @@ export default function Dashboard() {
   };
 
   const handleMeditate = () => {
-    const meditationAudio = new Audio('https://cdn.example.com/meditation.mp3'); // You'll need to replace this with an actual meditation audio URL
-    meditationAudio.play().catch(error => {
-      console.error('Error playing meditation:', error);
-      toast({
-        title: "Meditation",
-        description: "Starting a 5-minute mindfulness session...",
-      });
-    });
-  };
-
-  const handleHeartRate = () => {
-    toast({
-      title: "Coming Soon",
-      description: "Heart rate monitoring will be available soon!",
-    });
-  };
-
-  const handleViewAchievements = () => {
-    toast({
-      title: "Coming Soon",
-      description: "Achievements feature will be available soon!",
-    });
+    setShowMeditation(true);
   };
 
   return (
     <>
       {showVoiceChat && <VoiceChat onClose={() => setShowVoiceChat(false)} />}
+      <MeditationDialog 
+        open={showMeditation} 
+        onClose={() => setShowMeditation(false)} 
+      />
       
       <Dialog open={showPreferences} onOpenChange={setShowPreferences}>
         <DialogContent className="sm:max-w-[425px]">
@@ -299,7 +283,6 @@ export default function Dashboard() {
             <QuickActions
               onVoiceChat={() => setShowVoiceChat(true)}
               onGenerateMusic={generateMusic}
-              onTrackProgress={handleTrackProgress}
               onMeditate={handleMeditate}
             />
           </div>

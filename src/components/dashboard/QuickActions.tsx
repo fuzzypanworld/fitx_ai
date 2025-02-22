@@ -1,19 +1,17 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Calendar, Music, Activity, Brain } from "lucide-react";
+import { Calendar, Music, Brain } from "lucide-react";
 
 interface QuickActionsProps {
   onVoiceChat: () => void;
   onGenerateMusic: () => void;
-  onTrackProgress: () => void;
   onMeditate: () => void;
 }
 
 export const QuickActions = ({
   onVoiceChat,
   onGenerateMusic,
-  onTrackProgress,
   onMeditate,
 }: QuickActionsProps) => {
   return (
@@ -29,10 +27,6 @@ export const QuickActions = ({
         <Button variant="outline" className="w-full justify-start" onClick={onGenerateMusic}>
           <Music className="w-4 h-4 mr-2" />
           Workout Music
-        </Button>
-        <Button variant="outline" className="w-full justify-start" onClick={onTrackProgress}>
-          <Activity className="w-4 h-4 mr-2" />
-          Track Progress
         </Button>
         <Button variant="outline" className="w-full justify-start" onClick={onMeditate}>
           <Brain className="w-4 h-4 mr-2" />
