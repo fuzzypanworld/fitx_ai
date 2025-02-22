@@ -1,25 +1,18 @@
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { Calendar, Dumbbell, Music, Settings, X } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2 } from "lucide-react";
 import VoiceChat from "@/components/VoiceChat";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Header } from "@/components/dashboard/Header";
+import { WorkoutCard } from "@/components/dashboard/WorkoutCard";
+import { QuickActions } from "@/components/dashboard/QuickActions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 
 interface WorkoutData {
   title: string;
@@ -74,7 +67,6 @@ export default function Dashboard() {
       setIsGenerating(true);
       setShowPreferences(false);
 
-      // Generate workout using Supabase Edge Function with Gemini
       const { data, error } = await supabase.functions
         .invoke('generate-workout', {
           body: {
@@ -88,7 +80,6 @@ export default function Dashboard() {
 
       if (error) throw error;
 
-      // Save the generated workout
       const { error: saveError } = await supabase
         .from('workouts')
         .insert({
@@ -105,7 +96,6 @@ export default function Dashboard() {
         title: "Workout Generated!",
         description: "Your new personalized workout plan is ready.",
       });
-
     } catch (error: any) {
       console.error('Error generating workout:', error);
       toast({
@@ -132,7 +122,6 @@ export default function Dashboard() {
         description: "Your workout playlist is ready.",
       });
       
-      // Open the playlist in a new tab
       window.open(data.playlist_url, '_blank');
     } catch (error: any) {
       console.error('Error generating music:', error);
@@ -142,6 +131,34 @@ export default function Dashboard() {
         variant: "destructive",
       });
     }
+  };
+
+  const handleTrackProgress = () => {
+    toast({
+      title: "Coming Soon",
+      description: "Progress tracking feature will be available soon!",
+    });
+  };
+
+  const handleMeditate = () => {
+    toast({
+      title: "Coming Soon",
+      description: "Meditation feature will be available soon!",
+    });
+  };
+
+  const handleHeartRate = () => {
+    toast({
+      title: "Coming Soon",
+      description: "Heart rate monitoring will be available soon!",
+    });
+  };
+
+  const handleViewAchievements = () => {
+    toast({
+      title: "Coming Soon",
+      description: "Achievements feature will be available soon!",
+    });
   };
 
   return (
@@ -248,83 +265,23 @@ export default function Dashboard() {
       </Dialog>
 
       <div className="min-h-screen w-full p-4 md:p-8">
-        <header className="max-w-7xl mx-auto flex justify-between items-center mb-8">
-          <h1 className="text-2xl font-bold">Welcome, {user?.name || "Friend"}!</h1>
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon">
-              <Settings className="w-5 h-5" />
-            </Button>
-            <Button variant="outline" onClick={signOut}>
-              Sign Out
-            </Button>
-          </div>
-        </header>
+        <Header userName={user?.name} onSignOut={signOut} />
 
         <main className="max-w-7xl mx-auto space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Today's Workout */}
-            <Card className="glass col-span-2">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Dumbbell className="w-5 h-5" />
-                  {workout ? workout.title : "Today's Workout"}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {workout ? (
-                  <div className="space-y-4">
-                    <p className="text-muted-foreground">{workout.description}</p>
-                    <div className="space-y-2">
-                      {workout.exercises.map((exercise, index) => (
-                        <div key={index} className="flex justify-between items-center p-2 bg-secondary/10 rounded">
-                          <span>{exercise.name}</span>
-                          <span>{exercise.sets} × {exercise.reps}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-muted-foreground">Your personalized workout will appear here...</p>
-                    <Button 
-                      className="mt-4" 
-                      onClick={generateWorkout}
-                      disabled={isGenerating}
-                    >
-                      {isGenerating ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Generating...
-                        </>
-                      ) : (
-                        'Generate Workout'
-                      )}
-                    </Button>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Quick Actions */}
-            <Card className="glass">
-              <CardHeader>
-                <CardTitle>Quick Actions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Button variant="outline" className="w-full justify-start" onClick={() => setShowVoiceChat(true)}>
-                  <Calendar className="w-4 h-4 mr-2" />
-                  Start Voice Chat
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start"
-                  onClick={generateMusic}
-                >
-                  <Music className="w-4 h-4 mr-2" />
-                  Generate Music
-                </Button>
-              </CardContent>
-            </Card>
+            <WorkoutCard
+              workout={workout}
+              isGenerating={isGenerating}
+              onGenerate={generateWorkout}
+            />
+            <QuickActions
+              onVoiceChat={() => setShowVoiceChat(true)}
+              onGenerateMusic={generateMusic}
+              onTrackProgress={handleTrackProgress}
+              onMeditate={handleMeditate}
+              onHeartRate={handleHeartRate}
+              onViewAchievements={handleViewAchievements}
+            />
           </div>
         </main>
       </div>
