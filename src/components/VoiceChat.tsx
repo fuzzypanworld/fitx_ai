@@ -1,4 +1,5 @@
-import React, { useRef, useState } from 'react';
+
+import React, { useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Mic, X } from 'lucide-react';
@@ -11,11 +12,33 @@ interface VoiceChatProps {
 const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout>();
+  const silenceTimeoutRef = useRef<NodeJS.Timeout>();
+  const audioContextRef = useRef<AudioContext>();
+  const analyserRef = useRef<AnalyserNode>();
   const { toast } = useToast();
+
+  const detectSilence = (dataArray: Uint8Array) => {
+    const sum = dataArray.reduce((a, b) => a + b, 0);
+    const average = sum / dataArray.length;
+    const isSpeakingNow = average > 20; // Adjust threshold as needed
+    setIsSpeaking(isSpeakingNow);
+
+    if (isSpeakingNow && silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+    }
+
+    if (!isSpeakingNow && !silenceTimeoutRef.current && isRecording) {
+      silenceTimeoutRef.current = setTimeout(() => {
+        stopRecording();
+      }, 1500); // Stop after 1.5 seconds of silence
+    }
+  };
 
   const startRecording = async () => {
     try {
@@ -23,6 +46,27 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+
+      // Set up audio analysis
+      audioContextRef.current = new AudioContext();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      source.connect(analyserRef.current);
+      analyserRef.current.fftSize = 256;
+
+      // Start analyzing audio
+      const bufferLength = analyserRef.current.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      const checkAudio = () => {
+        if (isRecording && analyserRef.current) {
+          analyserRef.current.getByteFrequencyData(dataArray);
+          detectSilence(dataArray);
+          requestAnimationFrame(checkAudio);
+        }
+      };
+      
+      checkAudio();
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -35,7 +79,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         await processAudio(audioBlob);
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(100); // Collect data every 100ms
       setIsRecording(true);
       
       setTimeLeft(360);
@@ -68,7 +112,15 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
       setTimeLeft(0);
+      
+      // Clean up audio context
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
     }
   };
 
@@ -93,7 +145,12 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
 
       if (error) throw error;
 
+      // Play the response audio
       const audio = new Audio(`data:audio/mpeg;base64,${data.audioContent}`);
+      
+      audio.onplay = () => setIsAISpeaking(true);
+      audio.onended = () => setIsAISpeaking(false);
+      
       await audio.play();
 
       toast({
@@ -119,6 +176,18 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      }
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+      if (audioContextRef.current) audioContextRef.current.close();
+    };
+  }, []);
+
   return (
     <div className="fixed inset-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-50 flex flex-col items-center justify-center">
       <button 
@@ -134,9 +203,14 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       <div className="relative w-32 h-32 mb-8">
         <div className="absolute inset-0 rounded-full bg-blue-500/20" />
         <div 
-          className="absolute inset-2 rounded-full bg-gradient-to-b from-blue-400 to-blue-600"
+          className={`absolute inset-2 rounded-full bg-gradient-to-b from-blue-400 to-blue-600 transition-transform duration-150`}
           style={{
-            animation: isRecording ? 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite' : 'none'
+            animation: isSpeaking || isAISpeaking 
+              ? 'bounce 0.5s ease-in-out infinite alternate'
+              : isRecording 
+                ? 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+                : 'none',
+            transform: isSpeaking || isAISpeaking ? `scale(${1 + Math.random() * 0.2})` : 'scale(1)',
           }}
         />
       </div>
@@ -169,11 +243,17 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         )}
       </div>
 
-      {isProcessing && (
-        <div className="mt-4 text-sm text-muted-foreground animate-pulse">
-          Processing your message...
-        </div>
-      )}
+      <div className="mt-4 text-sm text-muted-foreground">
+        {isProcessing ? (
+          <span className="animate-pulse">Processing your message...</span>
+        ) : isRecording ? (
+          <span>Listening{isSpeaking ? '...' : ''}</span>
+        ) : isAISpeaking ? (
+          <span>AI is speaking...</span>
+        ) : (
+          <span>Click the mic to start</span>
+        )}
+      </div>
     </div>
   );
 };
