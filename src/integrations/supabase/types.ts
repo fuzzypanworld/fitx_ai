@@ -54,6 +54,92 @@ export type Database = {
         }
         Relationships: []
       }
+      user_profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          experience_level:
+            | Database["public"]["Enums"]["experience_level"]
+            | null
+          full_name: string | null
+          id: string
+          is_premium: boolean | null
+          premium_until: string | null
+          updated_at: string
+          workout_frequency: number | null
+          workout_goal: Database["public"]["Enums"]["workout_goal"] | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          experience_level?:
+            | Database["public"]["Enums"]["experience_level"]
+            | null
+          full_name?: string | null
+          id: string
+          is_premium?: boolean | null
+          premium_until?: string | null
+          updated_at?: string
+          workout_frequency?: number | null
+          workout_goal?: Database["public"]["Enums"]["workout_goal"] | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          experience_level?:
+            | Database["public"]["Enums"]["experience_level"]
+            | null
+          full_name?: string | null
+          id?: string
+          is_premium?: boolean | null
+          premium_until?: string | null
+          updated_at?: string
+          workout_frequency?: number | null
+          workout_goal?: Database["public"]["Enums"]["workout_goal"] | null
+        }
+        Relationships: []
+      }
+      workouts: {
+        Row: {
+          completed: boolean | null
+          completed_at: string | null
+          created_at: string
+          description: string | null
+          exercises: Json
+          id: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean | null
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          exercises: Json
+          id?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          completed?: boolean | null
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          exercises?: Json
+          id?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workouts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -62,7 +148,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      experience_level: "beginner" | "intermediate" | "advanced"
+      workout_goal: "weight-loss" | "muscle-gain" | "endurance"
     }
     CompositeTypes: {
       [_ in never]: never
