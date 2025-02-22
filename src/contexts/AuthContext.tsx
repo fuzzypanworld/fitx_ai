@@ -55,26 +55,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateUserProfile = async (authUser: User) => {
-    const { data: profile, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', authUser.id)
-      .single();
+    try {
+      // First try to get the profile data
+      const { data: profiles, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', authUser.id);
 
-    if (error) {
-      console.error('Error fetching user profile:', error);
-      return;
+      if (error) {
+        console.error('Error fetching user profile:', error);
+        return;
+      }
+
+      // Get the first profile or use default values
+      const profile = profiles?.[0];
+
+      setUser({
+        id: authUser.id,
+        email: authUser.email!,
+        name: profile?.full_name,
+        isPremium: profile?.is_premium || false,
+        workoutGoal: profile?.workout_goal,
+        experienceLevel: profile?.experience_level,
+        workoutFrequency: profile?.workout_frequency,
+      });
+    } catch (error) {
+      console.error('Error updating user profile:', error);
     }
-
-    setUser({
-      id: authUser.id,
-      email: authUser.email!,
-      name: profile?.full_name,
-      isPremium: profile?.is_premium || false,
-      workoutGoal: profile?.workout_goal,
-      experienceLevel: profile?.experience_level,
-      workoutFrequency: profile?.workout_frequency,
-    });
   };
 
   const signIn = async (email: string, password: string) => {
