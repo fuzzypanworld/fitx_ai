@@ -1,4 +1,3 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,6 +7,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
+import VoiceChat from "@/components/VoiceChat";
 
 interface WorkoutData {
   title: string;
@@ -140,7 +140,7 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto space-y-6">
-        <WorkoutTracker />
+        <VoiceChat />
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Today's Workout */}
