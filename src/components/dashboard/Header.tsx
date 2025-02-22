@@ -12,7 +12,7 @@ export const Header = ({ userName, onSignOut }: HeaderProps) => {
     <header className="max-w-7xl mx-auto flex justify-between items-center mb-8">
       <div className="flex items-center gap-4">
         <img 
-          src="public/lovable-uploads/a9c756ba-9eab-40db-8426-9c84e497dff9.png" 
+          src="public/lovable-uploads/c21a4c24-1f88-4ee0-953e-3a4b05f263bd.png" 
           alt="FitX AI" 
           className="h-10" 
         />
