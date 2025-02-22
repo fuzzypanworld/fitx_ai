@@ -29,7 +29,7 @@ const WorkoutTracker = () => {
   const [calibrating, setCalibrating] = useState(false);
   const { toast } = useToast();
 
-  // Initialize PoseNet with better settings
+  // Initialize PoseNet
   useEffect(() => {
     const initPoseNet = async () => {
       try {
@@ -55,9 +55,21 @@ const WorkoutTracker = () => {
     };
     
     initPoseNet();
+
+    // Cleanup
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
   }, [toast]);
 
   const drawPose = (ctx: CanvasRenderingContext2D, pose: posenet.Pose) => {
+    if (!canvasRef.current) return;
+
+    // Clear previous drawing
+    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+
     // Draw keypoints with higher visibility
     pose.keypoints.forEach(keypoint => {
       if (keypoint.score > MIN_CONFIDENCE) {
@@ -79,7 +91,7 @@ const WorkoutTracker = () => {
     });
   };
 
-  // Enhanced push-up detection
+  // Enhanced push-up detection with better angle calculation
   let armAngle = 180;
   let isGoingDown = true;
   let lastPushUpTime = 0;
@@ -105,9 +117,13 @@ const WorkoutTracker = () => {
       const currentArmAngle = calculateAngle(shoulder, elbow, wrist);
       const currentTime = Date.now();
 
+      // Log angles for debugging
+      console.log('Current arm angle:', currentArmAngle);
+
       // Down phase of push-up
       if (isGoingDown && currentArmAngle < 90 && armAngle >= 90) {
         isGoingDown = false;
+        console.log('Push-up down phase detected');
       }
       // Up phase of push-up
       else if (!isGoingDown && currentArmAngle > 160 && 
@@ -122,7 +138,7 @@ const WorkoutTracker = () => {
         lastPushUpTime = currentTime;
         isGoingDown = true;
         
-        // Provide visual feedback
+        console.log('Push-up counted!');
         toast({
           title: "Push-up counted! 💪",
           description: `Keep going! You're doing great!`,
@@ -138,19 +154,24 @@ const WorkoutTracker = () => {
 
     try {
       const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) return;
+
+      // Make sure canvas dimensions match video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
       const pose = await detector.estimateSinglePose(video, {
         flipHorizontal: false
       });
 
+      console.log('Pose detected:', pose.score);
+
       if (pose.score > 0.3) {
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        
-        if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          drawPose(ctx, pose);
-          detectPushUp(pose.keypoints);
-        }
+        drawPose(ctx, pose);
+        detectPushUp(pose.keypoints);
       }
 
       if (isRecording) {
@@ -210,6 +231,14 @@ const WorkoutTracker = () => {
       streamRef.current = null;
     }
     setIsRecording(false);
+
+    // Clear the canvas
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      }
+    }
   };
 
   return (
