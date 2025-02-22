@@ -4,19 +4,36 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Mic, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface VoiceChatProps {
   onClose: () => void;
 }
 
 const VoiceChat = ({ onClose }: VoiceChatProps) => {
+  const { user } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [hasGreeted, setHasGreeted] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const { toast } = useToast();
+
+  const speakGreeting = () => {
+    if (synthRef.current && !hasGreeted) {
+      const name = user?.name || 'there';
+      const greeting = `Hello ${name}! I'm FitX AI. How can I help you today?`;
+      const utterance = new SpeechSynthesisUtterance(greeting);
+      utterance.onstart = () => setIsAISpeaking(true);
+      utterance.onend = () => {
+        setIsAISpeaking(false);
+        setHasGreeted(true);
+      };
+      synthRef.current.speak(utterance);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -24,20 +41,22 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
         const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognitionRef.current = new SpeechRecognitionAPI();
-        recognitionRef.current.continuous = true;
-        recognitionRef.current.interimResults = false; // Changed to false to only get final results
+        recognitionRef.current.continuous = false; // Changed to false for single interactions
+        recognitionRef.current.interimResults = false;
 
         recognitionRef.current.onstart = () => {
           console.log('Speech recognition started');
           setIsRecording(true);
           setIsSpeaking(false);
+          if (!hasGreeted) {
+            speakGreeting();
+          }
         };
 
         recognitionRef.current.onend = () => {
           console.log('Speech recognition ended');
-          // Don't automatically set isRecording to false here
           setIsSpeaking(false);
-          // Only restart if we're supposed to be recording and not processing
+          // Only restart if we're still supposed to be recording and not processing
           if (isRecording && !isProcessing && !isAISpeaking && recognitionRef.current) {
             console.log('Restarting speech recognition');
             try {
@@ -67,7 +86,8 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
 
           console.log('Transcript:', transcript);
           if (transcript.trim()) {
-            recognitionRef.current?.stop(); // Temporarily stop while processing
+            recognitionRef.current?.stop(); // Stop recording while processing
+            setIsProcessing(true);
             await processText(transcript);
           }
         };
@@ -98,7 +118,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         variant: "destructive",
       });
     }
-  }, [toast, isRecording, isProcessing, isAISpeaking]);
+  }, [toast, isRecording, isProcessing, isAISpeaking, hasGreeted, user]);
 
   const startRecording = () => {
     if (recognitionRef.current && !isRecording) {
@@ -122,11 +142,13 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
 
   const processText = async (text: string) => {
     try {
-      setIsProcessing(true);
       console.log('Processing text:', text);
       
       const { data, error } = await supabase.functions.invoke('voice-chat', {
-        body: { text }
+        body: { 
+          text,
+          userName: user?.name
+        }
       });
 
       if (error) throw error;
@@ -142,8 +164,9 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       utterance.onend = () => {
         console.log('AI finished speaking');
         setIsAISpeaking(false);
-        // Resume recognition after AI finishes speaking if still in recording mode
-        if (isRecording && recognitionRef.current && !isProcessing) {
+        setIsProcessing(false);
+        // Resume recognition after AI finishes speaking
+        if (isRecording && recognitionRef.current) {
           console.log('Resuming speech recognition after AI response');
           try {
             recognitionRef.current.start();
@@ -170,7 +193,6 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         description: "Failed to process your message",
         variant: "destructive",
       });
-    } finally {
       setIsProcessing(false);
     }
   };
