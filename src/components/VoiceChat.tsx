@@ -19,63 +19,72 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Initialize speech recognition
-    if (window.SpeechRecognition || window.webkitSpeechRecognition) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
+    try {
+      // Initialize speech recognition
+      if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+        const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognitionRef.current = new SpeechRecognitionAPI();
+        recognitionRef.current.continuous = true;
+        recognitionRef.current.interimResults = true;
 
-      recognitionRef.current.onstart = () => {
-        setIsRecording(true);
-        setIsSpeaking(false);
-      };
+        recognitionRef.current.onstart = () => {
+          setIsRecording(true);
+          setIsSpeaking(false);
+        };
 
-      recognitionRef.current.onend = () => {
-        setIsRecording(false);
-        setIsSpeaking(false);
-      };
+        recognitionRef.current.onend = () => {
+          setIsRecording(false);
+          setIsSpeaking(false);
+        };
 
-      recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
+        recognitionRef.current.onerror = (event) => {
+          console.error('Speech recognition error:', event.error);
+          toast({
+            title: "Error",
+            description: "Speech recognition failed. Please try again.",
+            variant: "destructive",
+          });
+          setIsRecording(false);
+        };
+
+        recognitionRef.current.onresult = async (event: SpeechRecognitionEvent) => {
+          const transcript = Array.from(event.results)
+            .map(result => result[0].transcript)
+            .join('');
+
+          setIsSpeaking(true);
+
+          if (event.results[0].isFinal) {
+            await processText(transcript);
+          }
+        };
+
+        // Initialize speech synthesis
+        synthRef.current = window.speechSynthesis;
+      } else {
         toast({
           title: "Error",
-          description: "Speech recognition failed. Please try again.",
+          description: "Speech recognition is not supported in your browser",
           variant: "destructive",
         });
-        setIsRecording(false);
-      };
+      }
 
-      recognitionRef.current.onresult = async (event) => {
-        const transcript = Array.from(event.results)
-          .map(result => result[0].transcript)
-          .join('');
-
-        setIsSpeaking(true);
-
-        if (event.results[0].isFinal) {
-          await processText(transcript);
+      return () => {
+        if (recognitionRef.current) {
+          recognitionRef.current.abort();
+        }
+        if (synthRef.current) {
+          synthRef.current.cancel();
         }
       };
-
-      // Initialize speech synthesis
-      synthRef.current = window.speechSynthesis;
-    } else {
+    } catch (error) {
+      console.error('Error initializing speech recognition:', error);
       toast({
         title: "Error",
-        description: "Speech recognition is not supported in your browser",
+        description: "Failed to initialize speech recognition",
         variant: "destructive",
       });
     }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-      }
-      if (synthRef.current) {
-        synthRef.current.cancel();
-      }
-    };
   }, [toast]);
 
   const startRecording = () => {
