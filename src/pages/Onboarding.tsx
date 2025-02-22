@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,23 +31,62 @@ export default function Onboarding() {
     frequency: "",
   });
 
+  useEffect(() => {
+    if (!user?.id) {
+      navigate('/auth');
+    }
+  }, [user, navigate]);
+
   const handleNext = async () => {
     if (step < 3) {
       setStep(step + 1);
     } else {
       setLoading(true);
       try {
-        // Save user preferences
-        const { error: updateError } = await supabase
-          .from('user_profiles')
-          .update({
-            workout_goal: formData.goal as WorkoutGoal,
-            experience_level: formData.experience as ExperienceLevel,
-            workout_frequency: parseInt(formData.frequency),
-          })
-          .eq('id', user?.id);
+        console.log('Starting onboarding process...'); // Debug log
 
-        if (updateError) throw updateError;
+        // First check if profile exists
+        const { data: existingProfile } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', user?.id)
+          .single();
+
+        console.log('Existing profile:', existingProfile); // Debug log
+
+        // If profile doesn't exist, create it
+        if (!existingProfile) {
+          const { error: insertError } = await supabase
+            .from('user_profiles')
+            .insert({
+              id: user?.id,
+              workout_goal: formData.goal as WorkoutGoal,
+              experience_level: formData.experience as ExperienceLevel,
+              workout_frequency: parseInt(formData.frequency),
+            });
+
+          if (insertError) {
+            console.error('Insert error:', insertError); // Debug log
+            throw insertError;
+          }
+        } else {
+          // Update existing profile
+          const { error: updateError } = await supabase
+            .from('user_profiles')
+            .update({
+              workout_goal: formData.goal as WorkoutGoal,
+              experience_level: formData.experience as ExperienceLevel,
+              workout_frequency: parseInt(formData.frequency),
+            })
+            .eq('id', user?.id);
+
+          if (updateError) {
+            console.error('Update error:', updateError); // Debug log
+            throw updateError;
+          }
+        }
+
+        console.log('Profile updated, generating workout...'); // Debug log
 
         // Generate first workout
         const { data: workout, error: generationError } = await supabase.functions
@@ -59,7 +98,12 @@ export default function Onboarding() {
             },
           });
 
-        if (generationError) throw generationError;
+        if (generationError) {
+          console.error('Generation error:', generationError); // Debug log
+          throw generationError;
+        }
+
+        console.log('Workout generated:', workout); // Debug log
 
         // Save the generated workout
         const { error: saveError } = await supabase
@@ -71,7 +115,10 @@ export default function Onboarding() {
             exercises: workout.exercises,
           });
 
-        if (saveError) throw saveError;
+        if (saveError) {
+          console.error('Save error:', saveError); // Debug log
+          throw saveError;
+        }
 
         toast({
           title: "Profile Created!",
@@ -82,7 +129,7 @@ export default function Onboarding() {
         console.error('Error during onboarding:', error);
         toast({
           title: "Error",
-          description: "Failed to complete setup. Please try again.",
+          description: error.message || "Failed to complete setup. Please try again.",
           variant: "destructive",
         });
       } finally {
