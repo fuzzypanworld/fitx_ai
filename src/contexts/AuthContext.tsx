@@ -31,17 +31,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check active session and subscribe to auth changes
     const initAuth = async () => {
       try {
-        // Get initial session
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
           await updateUserProfile(session.user);
         }
 
-        // Set up auth state listener
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
           console.log("Auth state changed:", event, session?.user?.id);
           
@@ -70,36 +67,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log("Updating user profile for:", authUser.id);
       
-      // First try to get the profile data
-      const { data: profiles, error } = await supabase
+      const { data: profile, error } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', authUser.id)
         .single();
 
-      if (error) {
+      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found" error
         console.error('Error fetching user profile:', error);
         return;
       }
 
-      // Get the first profile or use default values
-      const profile = profiles || {
-        id: authUser.id,
-        full_name: authUser.user_metadata?.full_name,
-        is_premium: false
-      };
-
-      setUser({
+      // Create a user profile with all required fields
+      const userProfile: UserProfile = {
         id: authUser.id,
         email: authUser.email!,
-        name: profile?.full_name,
+        name: profile?.full_name || authUser.user_metadata?.full_name,
         isPremium: profile?.is_premium || false,
-        workoutGoal: profile?.workout_goal,
-        experienceLevel: profile?.experience_level,
-        workoutFrequency: profile?.workout_frequency,
-      });
+        workoutGoal: profile?.workout_goal || undefined,
+        experienceLevel: profile?.experience_level || undefined,
+        workoutFrequency: profile?.workout_frequency || undefined,
+      };
+
+      setUser(userProfile);
       
-      // If we're on the auth page and have a user, redirect to dashboard
       if (window.location.pathname === '/auth') {
         navigate('/dashboard');
       }
