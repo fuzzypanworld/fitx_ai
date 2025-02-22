@@ -90,6 +90,21 @@ const WorkoutTracker = () => {
     setIsRecording(false);
   };
 
+  // Track the highest and lowest positions
+  let lowestY = Infinity;
+  let highestY = -Infinity;
+  let lastUpdateTime = 0;
+
+  // Reset tracking values periodically
+  const resetTracking = () => {
+    const now = Date.now();
+    if (now - lastUpdateTime > 5000) { // Reset every 5 seconds
+      lowestY = Infinity;
+      highestY = -Infinity;
+      lastUpdateTime = now;
+    }
+  };
+
   // Detect push-ups based on pose
   const isPushUpPosition = (keypoints: posenet.Keypoint[]) => {
     // Get relevant keypoints
@@ -100,39 +115,38 @@ const WorkoutTracker = () => {
     const elbows = keypoints.filter(kp => 
       kp.part === 'leftElbow' || kp.part === 'rightElbow'
     );
-    const wrists = keypoints.filter(kp => 
-      kp.part === 'leftWrist' || kp.part === 'rightWrist'
-    );
     
-    if (!nose || shoulders.length !== 2 || elbows.length !== 2 || wrists.length !== 2) {
+    if (!nose || shoulders.length !== 2 || elbows.length !== 2) {
       return false;
     }
 
-    // Calculate average positions
+    // Calculate average Y positions
     const shoulderY = (shoulders[0].position.y + shoulders[1].position.y) / 2;
-    const elbowY = (elbows[0].position.y + elbows[1].position.y) / 2;
-    const wristY = (wrists[0].position.y + wrists[1].position.y) / 2;
-    
-    // Check if nose is near shoulder level (down position)
-    const isNoseNearShoulders = Math.abs(nose.position.y - shoulderY) < 100;
-    
-    // Check if arms are in proper push-up position
-    const areArmsProperlyPositioned = 
-      Math.abs(elbowY - wristY) < 50 && // Elbows and wrists roughly same height
-      shoulders.every(s => s.score > 0.5) && // High confidence in shoulder detection
-      elbows.every(e => e.score > 0.5); // High confidence in elbow detection
-    
+    const noseY = nose.position.y;
+
+    // Update highest and lowest positions
+    if (noseY < highestY) highestY = noseY;
+    if (noseY > lowestY) lowestY = noseY;
+
+    // Calculate vertical movement range
+    const verticalRange = lowestY - highestY;
+
     // Log positions for debugging
     console.log('Pose Detection:', {
-      noseY: nose.position.y,
+      noseY,
       shoulderY,
-      elbowY,
-      wristY,
-      isNoseNearShoulders,
-      areArmsProperlyPositioned
+      verticalRange,
+      lowestY,
+      highestY
     });
 
-    return isNoseNearShoulders && areArmsProperlyPositioned;
+    // Detect push-up based on vertical movement
+    const isSignificantVerticalMovement = verticalRange > 50; // Adjusted threshold
+    const isNoseNearShoulders = Math.abs(noseY - shoulderY) < 150; // More lenient threshold
+
+    resetTracking();
+
+    return isSignificantVerticalMovement && isNoseNearShoulders;
   };
 
   let lastPushUpState = false;
