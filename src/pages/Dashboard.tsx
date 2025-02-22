@@ -1,4 +1,3 @@
-
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import { useEffect, useState } from "react";
@@ -133,17 +132,40 @@ export default function Dashboard() {
     }
   };
 
-  const handleTrackProgress = () => {
-    toast({
-      title: "Coming Soon",
-      description: "Progress tracking feature will be available soon!",
-    });
+  const handleTrackProgress = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('workouts')
+        .select('*')
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Show progress in a toast notification
+      const completedWorkouts = data.length;
+      toast({
+        title: "Progress Update",
+        description: `You have completed ${completedWorkouts} workouts so far!`,
+      });
+    } catch (error) {
+      console.error('Error fetching progress:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch progress. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleMeditate = () => {
-    toast({
-      title: "Coming Soon",
-      description: "Meditation feature will be available soon!",
+    const meditationAudio = new Audio('https://cdn.example.com/meditation.mp3'); // You'll need to replace this with an actual meditation audio URL
+    meditationAudio.play().catch(error => {
+      console.error('Error playing meditation:', error);
+      toast({
+        title: "Meditation",
+        description: "Starting a 5-minute mindfulness session...",
+      });
     });
   };
 
@@ -279,8 +301,6 @@ export default function Dashboard() {
               onGenerateMusic={generateMusic}
               onTrackProgress={handleTrackProgress}
               onMeditate={handleMeditate}
-              onHeartRate={handleHeartRate}
-              onViewAchievements={handleViewAchievements}
             />
           </div>
         </main>

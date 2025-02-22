@@ -113,11 +113,11 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       <div className="relative w-32 h-32 mb-8">
         <div className="absolute inset-0 rounded-full bg-blue-500/20" />
         <div 
-          className={`absolute inset-2 rounded-full bg-gradient-to-b from-blue-400 to-blue-600`}
+          className={`absolute inset-2 rounded-full bg-gradient-to-b from-blue-400 to-blue-600 transition-transform ${
+            isRecording ? 'animate-[pulse_1s_ease-in-out_infinite] scale-110' : ''
+          }`}
           style={{
-            animation: isRecording 
-              ? 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-              : 'none'
+            transform: isRecording ? `scale(${1 + Math.sin(Date.now() / 500) * 0.1})` : 'scale(1)',
           }}
         />
       </div>
