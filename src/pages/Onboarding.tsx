@@ -9,13 +9,23 @@ import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
+import { Database } from "@/integrations/supabase/types";
+
+type WorkoutGoal = Database["public"]["Enums"]["workout_goal"];
+type ExperienceLevel = Database["public"]["Enums"]["experience_level"];
+
+interface FormData {
+  goal: WorkoutGoal | "";
+  experience: ExperienceLevel | "";
+  frequency: string;
+}
 
 export default function Onboarding() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     goal: "",
     experience: "",
     frequency: "",
@@ -31,8 +41,8 @@ export default function Onboarding() {
         const { error: updateError } = await supabase
           .from('user_profiles')
           .update({
-            workout_goal: formData.goal,
-            experience_level: formData.experience,
+            workout_goal: formData.goal as WorkoutGoal,
+            experience_level: formData.experience as ExperienceLevel,
             workout_frequency: parseInt(formData.frequency),
           })
           .eq('id', user?.id);
@@ -81,15 +91,6 @@ export default function Onboarding() {
     }
   };
 
-  const frequencyToNumber = (freq: string) => {
-    switch (freq) {
-      case "2-3": return 3;
-      case "4-5": return 5;
-      case "6+": return 6;
-      default: return 3;
-    }
-  };
-
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4">
       <Card className="w-full max-w-lg glass animate-in">
@@ -102,7 +103,7 @@ export default function Onboarding() {
               <h2 className="text-xl font-semibold">What's your main fitness goal?</h2>
               <RadioGroup
                 value={formData.goal}
-                onValueChange={(value) => setFormData({ ...formData, goal: value })}
+                onValueChange={(value: WorkoutGoal) => setFormData({ ...formData, goal: value })}
               >
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="weight-loss" id="weight-loss" />
@@ -125,7 +126,7 @@ export default function Onboarding() {
               <h2 className="text-xl font-semibold">What's your fitness experience level?</h2>
               <RadioGroup
                 value={formData.experience}
-                onValueChange={(value) => setFormData({ ...formData, experience: value })}
+                onValueChange={(value: ExperienceLevel) => setFormData({ ...formData, experience: value })}
               >
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="beginner" id="beginner" />
