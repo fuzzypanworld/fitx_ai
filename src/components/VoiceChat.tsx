@@ -15,9 +15,23 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
+    // Initialize audio element
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.onerror = (e) => {
+        console.error('Audio error:', e);
+        toast({
+          title: "Error",
+          description: "Failed to play audio response. Please try again.",
+          variant: "destructive",
+        });
+      };
+    }
+
     // Initialize speech recognition
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
       const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -42,7 +56,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       };
 
       recognitionRef.current.onerror = (event) => {
-        console.error('Error:', event.error);
+        console.error('Speech recognition error:', event.error);
         toast({
           title: "Error",
           description: "Speech recognition failed. Please try again.",
@@ -55,6 +69,10 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.abort();
+      }
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
       }
     };
   }, [toast]);
@@ -74,29 +92,55 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const processText = async (text: string) => {
     try {
       setIsProcessing(true);
-      const { data, error } = await supabase.functions.invoke('voice-chat', {
+      
+      // First, get AI response
+      const { data: voiceData, error: voiceError } = await supabase.functions.invoke('voice-chat', {
         body: { text, userName: user?.name }
       });
 
-      if (error) throw error;
+      console.log('Voice chat response:', { voiceData, voiceError });
 
-      const utterance = new SpeechSynthesisUtterance(data.responseText);
-      utterance.onend = () => {
-        setIsProcessing(false);
-      };
-      window.speechSynthesis.speak(utterance);
+      if (voiceError) throw voiceError;
+
+      // Then convert response to speech
+      const { data: speechData, error: speechError } = await supabase.functions.invoke('text-to-speech', {
+        body: { text: voiceData.responseText }
+      });
+
+      console.log('Text-to-speech response:', { speechData, speechError });
+
+      if (speechError) throw speechError;
+
+      if (!speechData?.audioContent) {
+        throw new Error('No audio content received');
+      }
+
+      // Play the audio response
+      if (audioRef.current) {
+        console.log('Setting up audio playback...');
+        audioRef.current.src = `data:audio/mp3;base64,${speechData.audioContent}`;
+        
+        try {
+          await audioRef.current.play();
+          console.log('Audio started playing');
+        } catch (playError) {
+          console.error('Audio playback error:', playError);
+          throw playError;
+        }
+      }
 
       toast({
         title: "You said:",
         description: text,
       });
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error processing voice chat:', error);
       toast({
         title: "Error",
-        description: "Failed to process your message",
+        description: "Failed to process your message. Please try again.",
         variant: "destructive",
       });
+    } finally {
       setIsProcessing(false);
     }
   };
