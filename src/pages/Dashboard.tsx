@@ -1,8 +1,8 @@
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { Calendar, Dumbbell, Music, Settings } from "lucide-react";
-import WorkoutTracker from "@/components/WorkoutTracker";
 import { useToast } from "@/components/ui/use-toast";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,16 +25,15 @@ export default function Dashboard() {
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
   const [workout, setWorkout] = useState<WorkoutData | null>(null);
+  const [showVoiceChat, setShowVoiceChat] = useState(false);
 
   useEffect(() => {
-    // Check if user is authenticated
     if (!user) {
       toast({
         title: "Authentication required",
         description: "Please sign in to access the dashboard",
         variant: "destructive",
       });
-      // Redirect will be handled by AuthContext
     }
   }, [user, toast]);
 
@@ -126,88 +125,90 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen w-full p-4 md:p-8">
-      <header className="max-w-7xl mx-auto flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold">Welcome, {user?.name || "Friend"}!</h1>
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon">
-            <Settings className="w-5 h-5" />
-          </Button>
-          <Button variant="outline" onClick={signOut}>
-            Sign Out
-          </Button>
-        </div>
-      </header>
+    <>
+      {showVoiceChat && <VoiceChat onClose={() => setShowVoiceChat(false)} />}
+      
+      <div className="min-h-screen w-full p-4 md:p-8">
+        <header className="max-w-7xl mx-auto flex justify-between items-center mb-8">
+          <h1 className="text-2xl font-bold">Welcome, {user?.name || "Friend"}!</h1>
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon">
+              <Settings className="w-5 h-5" />
+            </Button>
+            <Button variant="outline" onClick={signOut}>
+              Sign Out
+            </Button>
+          </div>
+        </header>
 
-      <main className="max-w-7xl mx-auto space-y-6">
-        <VoiceChat />
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Today's Workout */}
-          <Card className="glass col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Dumbbell className="w-5 h-5" />
-                {workout ? workout.title : "Today's Workout"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {workout ? (
-                <div className="space-y-4">
-                  <p className="text-muted-foreground">{workout.description}</p>
-                  <div className="space-y-2">
-                    {workout.exercises.map((exercise, index) => (
-                      <div key={index} className="flex justify-between items-center p-2 bg-secondary/10 rounded">
-                        <span>{exercise.name}</span>
-                        <span>{exercise.sets} × {exercise.reps}</span>
-                      </div>
-                    ))}
+        <main className="max-w-7xl mx-auto space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Today's Workout */}
+            <Card className="glass col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Dumbbell className="w-5 h-5" />
+                  {workout ? workout.title : "Today's Workout"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {workout ? (
+                  <div className="space-y-4">
+                    <p className="text-muted-foreground">{workout.description}</p>
+                    <div className="space-y-2">
+                      {workout.exercises.map((exercise, index) => (
+                        <div key={index} className="flex justify-between items-center p-2 bg-secondary/10 rounded">
+                          <span>{exercise.name}</span>
+                          <span>{exercise.sets} × {exercise.reps}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <>
-                  <p className="text-muted-foreground">Your personalized workout will appear here...</p>
-                  <Button 
-                    className="mt-4" 
-                    onClick={generateWorkout}
-                    disabled={isGenerating}
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      'Generate Workout'
-                    )}
-                  </Button>
-                </>
-              )}
-            </CardContent>
-          </Card>
+                ) : (
+                  <>
+                    <p className="text-muted-foreground">Your personalized workout will appear here...</p>
+                    <Button 
+                      className="mt-4" 
+                      onClick={generateWorkout}
+                      disabled={isGenerating}
+                    >
+                      {isGenerating ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        'Generate Workout'
+                      )}
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
 
-          {/* Quick Actions */}
-          <Card className="glass">
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Button variant="outline" className="w-full justify-start">
-                <Calendar className="w-4 h-4 mr-2" />
-                Schedule Workout
-              </Button>
-              <Button 
-                variant="outline" 
-                className="w-full justify-start"
-                onClick={generateMusic}
-              >
-                <Music className="w-4 h-4 mr-2" />
-                Generate Music
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    </div>
+            {/* Quick Actions */}
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle>Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button variant="outline" className="w-full justify-start" onClick={() => setShowVoiceChat(true)}>
+                  <Calendar className="w-4 h-4 mr-2" />
+                  Start Voice Chat
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={generateMusic}
+                >
+                  <Music className="w-4 h-4 mr-2" />
+                  Generate Music
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+      </div>
+    </>
   );
 }

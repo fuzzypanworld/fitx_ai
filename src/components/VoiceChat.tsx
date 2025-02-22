@@ -1,11 +1,14 @@
-
 import React, { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Mic, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
-const VoiceChat = () => {
+interface VoiceChatProps {
+  onClose: () => void;
+}
+
+const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
@@ -32,11 +35,9 @@ const VoiceChat = () => {
         await processAudio(audioBlob);
       };
 
-      // Start recording
       mediaRecorder.start();
       setIsRecording(true);
       
-      // Set 6 minute timer
       setTimeLeft(360);
       timerRef.current = setInterval(() => {
         setTimeLeft((prev) => {
@@ -64,7 +65,6 @@ const VoiceChat = () => {
       mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
       setIsRecording(false);
       
-      // Clear timer
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
@@ -76,7 +76,6 @@ const VoiceChat = () => {
     try {
       setIsProcessing(true);
       
-      // Convert blob to base64
       const base64Audio = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -88,18 +87,15 @@ const VoiceChat = () => {
         reader.readAsDataURL(audioBlob);
       });
 
-      // Send to edge function
       const { data, error } = await supabase.functions.invoke('voice-chat', {
         body: { audioContent: base64Audio }
       });
 
       if (error) throw error;
 
-      // Play the response audio
       const audio = new Audio(`data:audio/mpeg;base64,${data.audioContent}`);
       await audio.play();
 
-      // Show transcription
       toast({
         title: "You said:",
         description: data.transcribedText,
@@ -124,7 +120,17 @@ const VoiceChat = () => {
   };
 
   return (
-    <div className="fixed inset-0 bg-background/95 backdrop-blur flex flex-col items-center justify-center">
+    <div className="fixed inset-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-50 flex flex-col items-center justify-center">
+      <button 
+        onClick={() => {
+          if (isRecording) stopRecording();
+          onClose();
+        }}
+        className="absolute top-4 right-4 p-2 hover:bg-accent rounded-full"
+      >
+        <X className="h-6 w-6" />
+      </button>
+
       <div className="relative w-32 h-32 mb-8">
         <div className="absolute inset-0 rounded-full bg-blue-500/20" />
         <div 
