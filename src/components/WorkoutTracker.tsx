@@ -13,26 +13,41 @@ const WorkoutTracker = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [pushUpCount, setPushUpCount] = useState(0);
   const [detector, setDetector] = useState<posenet.PoseNet | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
-  // Initialize PoseNet
+  // Initialize TensorFlow.js and PoseNet
   useEffect(() => {
-    const loadModel = async () => {
+    const initializeAI = async () => {
       try {
-        const net = await posenet.load();
+        // First, explicitly set and initialize the WebGL backend
+        await tf.setBackend('webgl');
+        await tf.ready(); // Wait for backend to be ready
+        console.log('TensorFlow.js backend initialized:', tf.getBackend());
+
+        // Now load PoseNet
+        const net = await posenet.load({
+          architecture: 'MobileNetV1',
+          outputStride: 16,
+          inputResolution: { width: 640, height: 480 },
+          multiplier: 0.75
+        });
+        
         setDetector(net);
-        console.log('PoseNet loaded');
+        setIsLoading(false);
+        console.log('PoseNet loaded successfully');
       } catch (error) {
-        console.error('Failed to load PoseNet:', error);
+        console.error('Failed to initialize AI:', error);
         toast({
           title: "Error",
-          description: "Failed to load movement detection",
+          description: "Failed to initialize movement detection",
           variant: "destructive",
         });
+        setIsLoading(false);
       }
     };
 
-    loadModel();
+    initializeAI();
   }, [toast]);
 
   // Track push-up state
@@ -42,7 +57,7 @@ const WorkoutTracker = () => {
   });
 
   const detectPushUps = async () => {
-    if (!detector || !videoRef.current || !canvasRef.current || !isRecording) return;
+    if (!detector || !videoRef.current || !isRecording) return;
 
     try {
       const pose = await detector.estimateSinglePose(videoRef.current);
@@ -50,10 +65,9 @@ const WorkoutTracker = () => {
       // Get key body points
       const leftShoulder = pose.keypoints.find(k => k.part === 'leftShoulder');
       const leftElbow = pose.keypoints.find(k => k.part === 'leftElbow');
-      const leftWrist = pose.keypoints.find(k => k.part === 'leftWrist');
 
-      if (leftShoulder?.score > 0.5 && leftElbow?.score > 0.5 && leftWrist?.score > 0.5) {
-        // Calculate arm angle
+      if (leftShoulder?.score > 0.5 && leftElbow?.score > 0.5) {
+        // Calculate vertical movement
         const shoulderY = leftShoulder.position.y;
         const elbowY = leftElbow.position.y;
         
@@ -91,7 +105,11 @@ const WorkoutTracker = () => {
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true,
+        video: {
+          width: 640,
+          height: 480,
+          facingMode: 'user'
+        },
         audio: false 
       });
       
@@ -147,8 +165,9 @@ const WorkoutTracker = () => {
             <Button 
               onClick={isRecording ? stopCamera : startCamera}
               variant={isRecording ? "destructive" : "default"}
+              disabled={isLoading}
             >
-              {isRecording ? "Stop" : "Start"}
+              {isLoading ? "Initializing..." : isRecording ? "Stop" : "Start"}
             </Button>
             
             <div className="text-2xl font-bold">
