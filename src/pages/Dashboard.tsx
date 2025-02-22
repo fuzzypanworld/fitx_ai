@@ -4,9 +4,24 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { Calendar, Dumbbell, Music, Settings } from "lucide-react";
 import WorkoutTracker from "@/components/WorkoutTracker";
+import { useToast } from "@/components/ui/use-toast";
+import { useEffect } from "react";
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    // Check if user is authenticated
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to access the dashboard",
+        variant: "destructive",
+      });
+      // Redirect will be handled by AuthContext
+    }
+  }, [user, toast]);
 
   return (
     <div className="min-h-screen w-full p-4 md:p-8">
