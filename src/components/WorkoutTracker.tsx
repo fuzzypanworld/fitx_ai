@@ -3,7 +3,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
-import { Video, Microphone, MicrophoneOff } from 'lucide-react';
+import { Video } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 import * as posenet from '@tensorflow-models/posenet';
 
@@ -23,19 +23,35 @@ const WorkoutTracker = () => {
   const [net, setNet] = useState<posenet.PoseNet | null>(null);
   const { toast } = useToast();
 
-  // Initialize PoseNet model
+  // Initialize TensorFlow.js and PoseNet model
   useEffect(() => {
-    const loadPoseNet = async () => {
-      const loadedNet = await posenet.load({
-        architecture: 'MobileNetV1',
-        outputStride: 16,
-        inputResolution: { width: 640, height: 480 },
-        multiplier: 0.75
-      });
-      setNet(loadedNet);
+    const initTF = async () => {
+      try {
+        // Set the backend to WebGL
+        await tf.setBackend('webgl');
+        console.log('Using backend:', tf.getBackend());
+        
+        // Load PoseNet model
+        const loadedNet = await posenet.load({
+          architecture: 'MobileNetV1',
+          outputStride: 16,
+          inputResolution: { width: 640, height: 480 },
+          multiplier: 0.75
+        });
+        setNet(loadedNet);
+        console.log('PoseNet model loaded successfully');
+      } catch (error) {
+        console.error('Error initializing TensorFlow.js:', error);
+        toast({
+          title: "Model Loading Error",
+          description: "Unable to initialize workout detection. Please try again.",
+          variant: "destructive",
+        });
+      }
     };
-    loadPoseNet();
-  }, []);
+    
+    initTF();
+  }, [toast]);
 
   // Initialize camera stream
   const startCamera = async () => {
