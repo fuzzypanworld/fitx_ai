@@ -1,6 +1,6 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import OpenAI from 'https://esm.sh/openai@4.20.1'
+import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.2.1"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -54,30 +54,35 @@ serve(async (req) => {
         throw new Error('Text is required for chat')
       }
 
-      const openai = new OpenAI({
-        apiKey: Deno.env.get('OPENAI_API_KEY'),
-      })
+      const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') || '');
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: "You are a knowledgeable fitness and nutrition AI assistant. Keep your responses helpful, encouraging, and concise."
-          },
-          {
-            role: "user",
-            content: text
-          }
-        ],
-      })
+      try {
+        const chat = model.startChat({
+          history: [
+            {
+              role: "user",
+              parts: "You are a knowledgeable fitness and nutrition AI assistant. Keep your responses helpful, encouraging, and concise."
+            },
+            {
+              role: "model",
+              parts: "I understand. I'll act as a fitness and nutrition assistant, providing helpful, encouraging, and concise responses."
+            }
+          ]
+        });
 
-      const responseText = completion.choices[0]?.message?.content || 'I apologize, but I could not generate a response.'
+        const result = await chat.sendMessage(text);
+        const response = await result.response;
+        const responseText = response.text();
 
-      return new Response(
-        JSON.stringify({ responseText }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+        return new Response(
+          JSON.stringify({ responseText }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      } catch (error) {
+        console.error('Gemini API error:', error);
+        throw new Error('Failed to get response from Gemini');
+      }
     } else {
       throw new Error('Invalid operation type')
     }
