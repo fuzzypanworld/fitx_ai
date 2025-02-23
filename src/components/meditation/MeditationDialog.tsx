@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
   const [phase, setPhase] = useState<"inhale" | "hold" | "exhale">("inhale");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isStarted, setIsStarted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -37,12 +38,10 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
         audioRef.current = null;
       }
     };
-  }, [open]);
+  }, [open, toast]);
 
   const startMeditation = async () => {
-    setIsStarted(true);
-    setCurrentLap(0);
-    
+    setIsLoading(true);
     try {
       console.log("Starting meditation session...");
       const introText = "Welcome to your meditation session. This will help you calm your mind. Let's begin with deep breathing exercises.";
@@ -58,21 +57,16 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
         throw error;
       }
 
-      if (audioRef.current && data?.audioContent) {
-        console.log("Setting up audio source...");
-        audioRef.current.src = `data:audio/mp3;base64,${data.audioContent}`;
-        
-        try {
-          await audioRef.current.play();
-          console.log("Audio started playing");
-          startBreathingCycle();
-        } catch (playError) {
-          console.error('Audio playback error:', playError);
-          throw playError;
-        }
-      } else {
-        console.error('No audio content received');
+      if (!data?.audioContent) {
         throw new Error('No audio content received');
+      }
+
+      if (audioRef.current) {
+        audioRef.current.src = `data:audio/mp3;base64,${data.audioContent}`;
+        await audioRef.current.play();
+        console.log("Audio started playing");
+        setIsStarted(true);
+        startBreathingCycle();
       }
     } catch (error) {
       console.error('Error starting meditation:', error);
@@ -82,6 +76,8 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
         variant: "destructive",
       });
       setIsStarted(false);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -90,27 +86,35 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
     const totalLaps = 11;
     
     const breathingCycle = async () => {
+      if (!isStarted) return; // Stop if meditation is stopped
+
       // Inhale phase
       setPhase("inhale");
       await playAudio("Breathe in deeply");
       await wait(4000);
+      
+      if (!isStarted) return; // Check if stopped
       
       // Hold phase
       setPhase("hold");
       await playAudio("Hold");
       await wait(4000);
       
+      if (!isStarted) return; // Check if stopped
+      
       // Exhale phase
       setPhase("exhale");
       await playAudio("Breathe out slowly");
       await wait(4000);
       
+      if (!isStarted) return; // Check if stopped
+      
       currentLap++;
       setCurrentLap(currentLap);
       
-      if (currentLap < totalLaps) {
+      if (currentLap < totalLaps && isStarted) {
         breathingCycle();
-      } else {
+      } else if (isStarted) {
         await playAudio("Great job. Your meditation session is complete.");
         setIsStarted(false);
         setPhase("inhale");
@@ -135,13 +139,14 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
         throw error;
       }
 
-      if (audioRef.current && data?.audioContent) {
+      if (!data?.audioContent) {
+        throw new Error('No audio content received');
+      }
+
+      if (audioRef.current) {
         audioRef.current.src = `data:audio/mp3;base64,${data.audioContent}`;
         await audioRef.current.play();
         console.log("Audio played successfully");
-      } else {
-        console.error('No audio content received');
-        throw new Error('No audio content received');
       }
     } catch (error) {
       console.error('Error playing audio:', error);
@@ -155,20 +160,26 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
 
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+  const handleClose = () => {
+    if (isStarted) {
+      const confirmed = window.confirm("Are you sure you want to end your meditation session?");
+      if (!confirmed) return;
+      setIsStarted(false);
+    }
+    onClose();
+  };
+
   return (
-    <Dialog open={open} onOpenChange={() => {
-      if (isStarted) {
-        const confirmed = window.confirm("Are you sure you want to end your meditation session?");
-        if (!confirmed) return;
-      }
-      onClose();
-    }}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Meditation Session</DialogTitle>
+        </DialogHeader>
         <div className="relative h-[400px] flex flex-col items-center justify-center">
           <Button
             variant="ghost"
             className="absolute right-4 top-4"
-            onClick={onClose}
+            onClick={handleClose}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -193,9 +204,10 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
             {!isStarted ? (
               <Button 
                 onClick={startMeditation}
+                disabled={isLoading}
                 className="bg-blue-500 hover:bg-blue-600"
               >
-                Start Meditation
+                {isLoading ? "Starting..." : "Start Meditation"}
               </Button>
             ) : (
               <div className="space-y-2">
