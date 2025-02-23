@@ -111,6 +111,43 @@ const defaultNutritionValues = {
   }
 }
 
+// Add exercise recommendations calculation
+function getExerciseRecommendations(calories: number) {
+  const exercises = [
+    {
+      name: "Running",
+      caloriesPerMinute: 10,
+      intensity: "moderate"
+    },
+    {
+      name: "Swimming",
+      caloriesPerMinute: 8,
+      intensity: "moderate"
+    },
+    {
+      name: "Cycling",
+      caloriesPerMinute: 7,
+      intensity: "moderate"
+    },
+    {
+      name: "Walking",
+      caloriesPerMinute: 4,
+      intensity: "light"
+    },
+    {
+      name: "Jump Rope",
+      caloriesPerMinute: 12,
+      intensity: "high"
+    }
+  ];
+
+  return exercises.map(exercise => ({
+    name: exercise.name,
+    duration: Math.round(calories / exercise.caloriesPerMinute),
+    intensity: exercise.intensity
+  }));
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -265,7 +302,8 @@ serve(async (req) => {
       fat: Math.round(totalNutrition.fat_total_g),
       isHealthy: isHealthy,
       explanation: `This meal contains ${Math.round(totalNutrition.calories)} calories with ${Math.round(totalNutrition.protein_g)}g of protein, ${Math.round(totalNutrition.carbohydrates_total_g)}g of carbs, and ${Math.round(totalNutrition.fat_total_g)}g of fat.`,
-      healthyAlternative
+      healthyAlternative,
+      exerciseRecommendations: getExerciseRecommendations(totalNutrition.calories)
     }
 
     console.log('Final analysis:', analysis)
