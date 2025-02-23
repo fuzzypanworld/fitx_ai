@@ -1,22 +1,38 @@
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { goal, level, age, frequency, preferences } = await req.json()
-    
-    console.log('Generating workout with params:', { goal, level, age, frequency, preferences })
+    const { goal, level, age, frequency, preferences } = await req.json();
 
-    // Generate workout content using Gemini
+    const prompt = `Generate a workout plan with the following criteria:
+      - Goal: ${goal}
+      - Experience Level: ${level}
+      - Age: ${age}
+      - Workout Frequency: ${frequency} times per week
+      - Additional Preferences: ${preferences}
+      
+      Format the response as a JSON object with:
+      - title (string): A catchy title for the workout plan
+      - description (string): A brief description of the workout plan
+      - exercises (array): An array of exercises, each with:
+        - name (string): Name of the exercise
+        - sets (number): Number of sets
+        - reps (number): Number of reps
+        - restTime (number): Rest time in seconds
+      
+      Keep it focused and achievable.`;
+
     const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent', {
       method: 'POST',
       headers: {
@@ -26,26 +42,7 @@ serve(async (req) => {
       body: JSON.stringify({
         contents: [{
           parts: [{
-            text: `Create a workout plan with these parameters:
-            - Goal: ${goal}
-            - Fitness Level: ${level}
-            - Age: ${age}
-            - Weekly Frequency: ${frequency} times per week
-            - Additional Preferences: ${preferences}
-            
-            Format the response as a JSON object with this structure:
-            {
-              "title": "Workout Title",
-              "description": "Brief description of the workout plan",
-              "exercises": [
-                {
-                  "name": "Exercise Name",
-                  "sets": number,
-                  "reps": number,
-                  "restTime": number (in seconds)
-                }
-              ]
-            }`
+            text: prompt
           }]
         }],
         generationConfig: {
@@ -55,44 +52,19 @@ serve(async (req) => {
           maxOutputTokens: 1024,
         }
       })
-    })
+    });
 
-    if (!response.ok) {
-      throw new Error('Failed to generate workout')
-    }
+    const data = await response.json();
+    const workoutPlan = JSON.parse(data.candidates[0].content.parts[0].text);
 
-    const result = await response.json()
-    const workoutText = result.candidates[0].content.parts[0].text
-
-    // Extract the JSON part from the response
-    const jsonMatch = workoutText.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      throw new Error('Failed to parse workout data')
-    }
-
-    const workoutData = JSON.parse(jsonMatch[0])
-
-    return new Response(
-      JSON.stringify(workoutData),
-      { 
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json' 
-        } 
-      }
-    )
-
+    return new Response(JSON.stringify(workoutPlan), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   } catch (error) {
-    console.error('Error generating workout:', error)
-    return new Response(
-      JSON.stringify({ 
-        error: error.message,
-        details: error.stack 
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
+    console.error('Error generating workout:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
-})
+});
