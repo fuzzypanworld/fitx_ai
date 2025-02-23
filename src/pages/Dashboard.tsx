@@ -13,6 +13,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { MeditationDialog } from "@/components/meditation/MeditationDialog";
+import { FoodAnalyzer } from "@/components/food-analyzer/FoodAnalyzer";
 
 interface WorkoutData {
   title: string;
@@ -285,6 +286,11 @@ export default function Dashboard() {
               onGenerateMusic={generateMusic}
               onMeditate={handleMeditate}
             />
+          </div>
+          
+          <div className="mt-8">
+            <h2 className="text-2xl font-bold mb-4">Food Analysis</h2>
+            <FoodAnalyzer />
           </div>
         </main>
       </div>
