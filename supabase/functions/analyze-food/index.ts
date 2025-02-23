@@ -58,64 +58,44 @@ serve(async (req) => {
       )
     }
 
-    // Break down complex queries into individual words
-    const searchTerms = query.split(' ').filter(term => term.length > 0);
-    let allNutritionData: any[] = [];
-
-    // Fetch nutrition data for each term separately
-    for (const term of searchTerms) {
-      const nutritionResponse = await fetch(
-        `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(term)}`,
-        {
-          headers: {
-            'X-Api-Key': apiKey,
-            'Content-Type': 'application/json'
-          }
+    const response = await fetch(
+      `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(query)}`,
+      {
+        headers: {
+          'X-Api-Key': apiKey
         }
-      )
-
-      if (!nutritionResponse.ok) {
-        console.error(`API error for term "${term}":`, nutritionResponse.status);
-        continue;
       }
+    )
 
-      const data = await nutritionResponse.json();
-      if (data && data.length > 0) {
-        allNutritionData = [...allNutritionData, ...data];
-      }
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`)
     }
 
-    console.log('Combined nutrition data:', allNutritionData);
+    const data = await response.json()
+    console.log('API response:', data)
 
-    if (!allNutritionData.length) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
       return new Response(
         JSON.stringify({ error: 'No nutrition data found for this food' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
       )
     }
 
-    // Sum up the nutrition values from all items
-    const totals = allNutritionData.reduce((acc, item) => ({
-      calories: acc.calories + (parseFloat(item.calories) || 0),
-      protein: acc.protein + (parseFloat(item.protein_g) || 0),
-      carbs: acc.carbs + (parseFloat(item.carbohydrates_total_g) || 0),
-      fat: acc.fat + (parseFloat(item.fat_total_g) || 0)
-    }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+    // Get the first result's nutrition data
+    const firstItem = data[0]
+    const calories = Math.round(firstItem.calories || 0)
+    const protein = Math.round(firstItem.protein_g || 0)
+    const carbs = Math.round(firstItem.carbohydrates_total_g || 0)
+    const fat = Math.round(firstItem.fat_total_g || 0)
 
-    // Round all values
-    const calories = Math.round(totals.calories);
-    const protein = Math.round(totals.protein);
-    const carbs = Math.round(totals.carbs);
-    const fat = Math.round(totals.fat);
-
-    // Basic health assessment
+    // Health assessment
     const isHealthy = 
       calories <= 800 && // Not too caloric
       protein >= 15 && // Good protein content
-      fat < 30;  // Moderate fat content
+      fat < 30  // Moderate fat content
 
     const analysis = {
-      foods: allNutritionData.map(item => item.name || query),
+      foods: [firstItem.name || query],
       calories,
       protein,
       carbs,
@@ -126,20 +106,15 @@ serve(async (req) => {
       exerciseRecommendations: getExerciseRecommendations(calories)
     }
 
-    console.log('Final analysis:', analysis)
+    console.log('Analysis:', analysis)
     return new Response(
       JSON.stringify(analysis),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
-    console.error('Error in analyze-food function:', error)
+    console.error('Error:', error)
     return new Response(
-      JSON.stringify({ 
-        error: 'Failed to analyze food',
-        details: error.message,
-        stack: error.stack,
-        name: error.name
-      }),
+      JSON.stringify({ error: 'Failed to analyze food' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }

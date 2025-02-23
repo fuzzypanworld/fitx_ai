@@ -21,7 +21,7 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
   const meditationAudioRef = useRef<MeditationAudio | null>(null);
   const [isStarted, setIsStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const cycleRef = useRef<NodeJS.Timeout>();
+  const [isCompleted, setIsCompleted] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -38,55 +38,46 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
         audioRef.current = null;
         meditationAudioRef.current = null;
       }
-      if (cycleRef.current) {
-        clearTimeout(cycleRef.current);
-      }
     };
   }, [open, toast]);
 
   const startBreathingCycle = async () => {
     try {
       if (!meditationAudioRef.current || !isStarted) return;
-      let currentCycle = currentLap;
+      
+      const totalCycles = 3;
+      for (let cycle = 0; cycle < totalCycles; cycle++) {
+        if (!isStarted) break;
+        setCurrentLap(cycle);
 
-      const doCycle = async () => {
         // Inhale phase
         setPhase("inhale");
-        await meditationAudioRef.current?.playText("Breathe in deeply");
+        await meditationAudioRef.current.playText("Breathe in deeply");
         await wait(4000);
-
-        if (!isStarted) return;
+        if (!isStarted) break;
 
         // Hold phase
         setPhase("hold");
-        await meditationAudioRef.current?.playText("Hold your breath");
+        await meditationAudioRef.current.playText("Hold your breath");
         await wait(4000);
-
-        if (!isStarted) return;
+        if (!isStarted) break;
 
         // Exhale phase
         setPhase("exhale");
-        await meditationAudioRef.current?.playText("Release and breathe out slowly");
+        await meditationAudioRef.current.playText("Release and breathe out slowly");
         await wait(4000);
+        if (!isStarted) break;
+      }
 
-        if (!isStarted) return;
-
-        currentCycle++;
-        setCurrentLap(currentCycle);
-
-        if (currentCycle < 3 && isStarted) {
-          cycleRef.current = setTimeout(doCycle, 1000);
-        } else if (isStarted) {
-          await meditationAudioRef.current?.playText(
-            "Well done. Your meditation session is complete. Take a moment to feel the peace within."
-          );
-          setIsStarted(false);
-          setPhase("inhale");
-          setCurrentLap(0);
-        }
-      };
-
-      await doCycle();
+      if (isStarted) {
+        setIsCompleted(true);
+        await meditationAudioRef.current.playText(
+          "Well done. Your meditation session is complete. Take a moment to feel the peace within."
+        );
+        setIsStarted(false);
+        setPhase("inhale");
+        setCurrentLap(0);
+      }
     } catch (error) {
       console.error("Error in breathing cycle:", error);
       toast({
@@ -107,6 +98,7 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
       await meditationAudioRef.current.playText(introText);
       
       setIsStarted(true);
+      setIsCompleted(false);
       startBreathingCycle();
     } catch (error) {
       console.error('Error starting meditation:', error);
@@ -125,11 +117,9 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
     if (isStarted) {
       const confirmed = window.confirm("Are you sure you want to end your meditation session?");
       if (!confirmed) return;
-      setIsStarted(false);
-      if (cycleRef.current) {
-        clearTimeout(cycleRef.current);
-      }
     }
+    setIsStarted(false);
+    setIsCompleted(false);
     setCurrentLap(0);
     setPhase("inhale");
     onClose();
@@ -154,13 +144,25 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
 
           <div className="text-center mb-4">
             {!isStarted ? (
-              <Button 
-                onClick={startMeditation}
-                disabled={isLoading}
-                className="bg-blue-500 hover:bg-blue-600"
-              >
-                {isLoading ? "Starting..." : "Start Meditation"}
-              </Button>
+              isCompleted ? (
+                <div className="space-y-4">
+                  <p className="text-green-600 font-medium">Session Complete!</p>
+                  <Button 
+                    onClick={startMeditation}
+                    className="bg-blue-500 hover:bg-blue-600"
+                  >
+                    Start New Session
+                  </Button>
+                </div>
+              ) : (
+                <Button 
+                  onClick={startMeditation}
+                  disabled={isLoading}
+                  className="bg-blue-500 hover:bg-blue-600"
+                >
+                  {isLoading ? "Starting..." : "Start Meditation"}
+                </Button>
+              )
             ) : (
               <div className="space-y-2">
                 <div className="text-2xl font-semibold">
