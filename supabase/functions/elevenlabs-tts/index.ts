@@ -20,8 +20,8 @@ serve(async (req) => {
 
     console.log('Generating speech for text:', text)
 
-    // Using the specified voice ID
-    const VOICE_ID = 'UgBBYS2sOqTuMpoF3BR0'
+    // Using the specified voice ID for Laura
+    const VOICE_ID = 'FGY2WhTYpPnrIDTdsKH5'
     const MODEL_ID = 'eleven_monolingual_v1'
 
     const response = await fetch(

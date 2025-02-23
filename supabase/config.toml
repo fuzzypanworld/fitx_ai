@@ -15,3 +15,7 @@ verify_jwt = true
 
 [functions.text-to-speech]
 verify_jwt = true
+
+[functions.elevenlabs-tts]
+verify_jwt = true
+
