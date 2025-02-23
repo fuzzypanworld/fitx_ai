@@ -13,37 +13,51 @@ serve(async (req) => {
   }
 
   try {
-    console.log('Starting food analysis...')
     const { imageUrl } = await req.json()
+    console.log('Received image URL:', imageUrl)
     
     if (!imageUrl) {
-      throw new Error('Image URL is required')
+      return new Response(
+        JSON.stringify({ error: 'Image URL is required' }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400
+        }
+      )
     }
 
-    const hf = new HfInference(Deno.env.get('HUGGING_FACE_ACCESS_TOKEN'))
-    console.log('Analyzing image with Hugging Face...', imageUrl)
+    // Fetch the image first to ensure it exists and is accessible
+    const imageResponse = await fetch(imageUrl)
+    if (!imageResponse.ok) {
+      throw new Error('Failed to fetch image')
+    }
+    const imageBlob = await imageResponse.blob()
 
-    // Use a pre-trained model for image analysis
+    const hf = new HfInference(Deno.env.get('HUGGING_FACE_ACCESS_TOKEN'))
+    console.log('Starting image analysis...')
+
+    // Use the blob directly instead of the URL
     const result = await hf.imageToText({
       model: 'Salesforce/blip-image-captioning-base',
-      inputs: imageUrl,
+      inputs: imageBlob,
     })
 
     console.log('Raw analysis result:', result)
 
-    // Extract the text from the result (the API returns { generated_text: string })
-    const text = (typeof result === 'object' && result.generated_text) 
-      ? result.generated_text.toLowerCase()
-      : String(result).toLowerCase()
+    const description = result.generated_text.toLowerCase()
+    console.log('Processed description:', description)
 
-    console.log('Processed text:', text)
+    // Analyze the content
+    const isHealthy = /salad|vegetable|fruit|healthy|lean|fish|grilled/.test(description)
+    const unhealthyMatch = /pizza|burger|fries|fried|processed|candy|cake|dessert/.test(description)
 
-    // Process the result into our expected format
-    const isHealthy = text.match(/salad|vegetable|fruit|healthy|lean/) !== null
-    const unhealthyMatch = text.match(/pizza|burger|fries|fried|processed/)
+    const foods = description
+      .split(/,|\band\b/)
+      .map(food => food.trim())
+      .filter(food => food.length > 0)
 
     const analysis = {
-      foods: [text.split(' and ').map(food => food.trim())].flat(), // Split on 'and' to get individual foods
+      foods,
       calories: isHealthy ? 300 : 600,
       protein: isHealthy ? 15 : 20,
       carbs: isHealthy ? 30 : 50,
