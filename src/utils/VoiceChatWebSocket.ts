@@ -1,5 +1,7 @@
 
-import { Toast } from "@/components/ui/use-toast";
+import { toast as toastFn } from "@/components/ui/use-toast";
+
+type ToastFunction = typeof toastFn;
 
 export class VoiceChatWebSocket {
   private ws: WebSocket | null = null;
@@ -8,7 +10,7 @@ export class VoiceChatWebSocket {
 
   constructor(
     private onTranscript: (text: string) => void,
-    private toast: (props: { title: string; description: string; variant?: "destructive" }) => void,
+    private toast: ToastFunction,
     audioRef: React.RefObject<HTMLAudioElement>,
     speakingRef: React.MutableRefObject<boolean>
   ) {
