@@ -1,14 +1,11 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { TextToSpeechClient } from 'https://esm.sh/@google-cloud/text-to-speech@5.0.1'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
-
-// Using the specified voice ID
-const VOICE_ID = 'UgBBYS2sOqTuMpoF3BR0'
-const MODEL_ID = 'eleven_monolingual_v1'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -84,30 +81,21 @@ serve(async (req) => {
           const responseText = geminiResult.candidates[0].content.parts[0].text
           console.log('Generated response:', responseText)
 
-          // Convert response to speech using ElevenLabs
-          console.log('Converting response to speech...')
-          const ttsResponse = await fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
-            {
-              method: 'POST',
-              headers: {
-                'Accept': 'audio/mpeg',
-                'Content-Type': 'application/json',
-                'xi-api-key': Deno.env.get('ELEVENLABS_API_KEY') || '',
-              },
-              body: JSON.stringify({
-                text: responseText,
-                model_id: MODEL_ID,
-                voice_settings: {
-                  stability: 0.75,
-                  similarity_boost: 0.75,
-                },
-              }),
-            }
-          )
+          // Convert response to speech using Google TTS
+          console.log('Converting to speech using Google TTS...')
+          const client = new TextToSpeechClient()
+          const [ttsResponse] = await client.synthesizeSpeech({
+            input: { text: responseText },
+            voice: {
+              languageCode: 'en-US',
+              name: 'en-US-Standard-I',
+              ssmlGender: 'FEMALE'
+            },
+            audioConfig: { audioEncoding: 'MP3' }
+          })
 
-          if (!ttsResponse.ok) {
-            throw new Error('Failed to generate speech')
+          if (!ttsResponse.audioContent) {
+            throw new Error('No audio content received from Google TTS')
           }
 
           socket.send(JSON.stringify({ 
@@ -115,13 +103,12 @@ serve(async (req) => {
             text: responseText,
           }))
 
-          const audioBuffer = await ttsResponse.arrayBuffer()
-          const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioBuffer)))
-          
+          const base64Audio = btoa(String.fromCharCode(...new Uint8Array(ttsResponse.audioContent)))
           socket.send(JSON.stringify({
             type: 'audio',
             audio: base64Audio
           }))
+
           console.log('Audio response sent successfully')
         }
       } catch (error) {
