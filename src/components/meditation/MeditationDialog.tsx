@@ -23,6 +23,9 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
   useEffect(() => {
     if (open && !audioRef.current) {
       audioRef.current = new Audio();
+      audioRef.current.onended = () => {
+        console.log("Audio playback completed");
+      };
       audioRef.current.onerror = (e) => {
         console.error('Audio error:', e);
         toast({
@@ -44,7 +47,7 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
     setIsLoading(true);
     try {
       console.log("Starting meditation session...");
-      const introText = "Welcome to your meditation session. This will help you calm your mind. Let's begin with deep breathing exercises.";
+      const introText = "Welcome to your meditation session. Let's begin with deep breathing exercises. I'll guide you through each breath.";
       
       const { data, error } = await supabase.functions.invoke('elevenlabs-tts', {
         body: { text: introText }
@@ -62,7 +65,7 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
       }
 
       if (audioRef.current) {
-        audioRef.current.src = `data:audio/mp3;base64,${data.audioContent}`;
+        audioRef.current.src = `data:audio/mpeg;base64,${data.audioContent}`;
         await audioRef.current.play();
         console.log("Audio started playing");
         setIsStarted(true);
@@ -81,84 +84,88 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
     }
   };
 
-  const startBreathingCycle = () => {
-    let currentLap = 0;
-    const totalLaps = 11;
-    
-    const breathingCycle = async () => {
-      if (!isStarted) return; // Stop if meditation is stopped
-
-      // Inhale phase
-      setPhase("inhale");
-      await playAudio("Breathe in deeply");
-      await wait(4000);
-      
-      if (!isStarted) return; // Check if stopped
-      
-      // Hold phase
-      setPhase("hold");
-      await playAudio("Hold");
-      await wait(4000);
-      
-      if (!isStarted) return; // Check if stopped
-      
-      // Exhale phase
-      setPhase("exhale");
-      await playAudio("Breathe out slowly");
-      await wait(4000);
-      
-      if (!isStarted) return; // Check if stopped
-      
-      currentLap++;
-      setCurrentLap(currentLap);
-      
-      if (currentLap < totalLaps && isStarted) {
-        breathingCycle();
-      } else if (isStarted) {
-        await playAudio("Great job. Your meditation session is complete.");
-        setIsStarted(false);
-        setPhase("inhale");
-      }
-    };
-    
-    breathingCycle();
-  };
-
-  const playAudio = async (text: string) => {
+  const playAudio = async (text: string): Promise<void> => {
     try {
-      console.log("Playing audio for text:", text);
-      
+      if (!audioRef.current) return;
+
       const { data, error } = await supabase.functions.invoke('elevenlabs-tts', {
         body: { text }
       });
 
-      console.log("Text-to-speech response:", { data, error });
+      if (error) throw error;
+      if (!data?.audioContent) throw new Error('No audio content received');
 
-      if (error) {
-        console.error('Text-to-speech error:', error);
-        throw error;
-      }
+      return new Promise((resolve, reject) => {
+        if (!audioRef.current) {
+          reject(new Error('Audio element not initialized'));
+          return;
+        }
 
-      if (!data?.audioContent) {
-        throw new Error('No audio content received');
-      }
-
-      if (audioRef.current) {
-        audioRef.current.src = `data:audio/mp3;base64,${data.audioContent}`;
-        await audioRef.current.play();
-        console.log("Audio played successfully");
-      }
+        audioRef.current.onended = () => resolve();
+        audioRef.current.onerror = (e) => reject(e);
+        audioRef.current.src = `data:audio/mpeg;base64,${data.audioContent}`;
+        audioRef.current.play().catch(reject);
+      });
     } catch (error) {
       console.error('Error playing audio:', error);
-      toast({
-        title: "Error",
-        description: "Failed to play audio guidance. Please try again.",
-        variant: "destructive",
-      });
+      throw error;
     }
   };
 
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const startBreathingCycle = async () => {
+    let currentLap = 0;
+    const totalLaps = 3; // Reduced for testing
+
+    const breathingCycle = async () => {
+      try {
+        if (!isStarted) return;
+
+        // Inhale phase
+        setPhase("inhale");
+        await playAudio("Breathe in deeply");
+        await wait(4000);
+        
+        if (!isStarted) return;
+        
+        // Hold phase
+        setPhase("hold");
+        await playAudio("Hold your breath");
+        await wait(4000);
+        
+        if (!isStarted) return;
+        
+        // Exhale phase
+        setPhase("exhale");
+        await playAudio("Release and breathe out slowly");
+        await wait(4000);
+        
+        if (!isStarted) return;
+        
+        currentLap++;
+        setCurrentLap(currentLap);
+        
+        if (currentLap < totalLaps && isStarted) {
+          await breathingCycle();
+        } else if (isStarted) {
+          await playAudio("Well done. Your meditation session is complete. Take a moment to feel the peace within.");
+          setIsStarted(false);
+          setPhase("inhale");
+        }
+      } catch (error) {
+        console.error('Error in breathing cycle:', error);
+        toast({
+          title: "Error",
+          description: "There was an issue with the meditation guidance. Please try again.",
+          variant: "destructive",
+        });
+        setIsStarted(false);
+      }
+    };
+    
+    await breathingCycle();
+  };
 
   const handleClose = () => {
     if (isStarted) {
@@ -217,7 +224,7 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
                   {phase === "exhale" && "Breathe Out"}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  Lap {currentLap + 1} of 11
+                  Lap {currentLap + 1} of 3
                 </div>
               </div>
             )}
