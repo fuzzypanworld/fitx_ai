@@ -58,26 +58,36 @@ serve(async (req) => {
       )
     }
 
-    const nutritionResponse = await fetch(
-      `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(query)}`,
-      {
-        headers: {
-          'X-Api-Key': apiKey,
-          'Content-Type': 'application/json'
-        }
-      }
-    )
+    // Break down complex queries into individual words
+    const searchTerms = query.split(' ').filter(term => term.length > 0);
+    let allNutritionData: any[] = [];
 
-    if (!nutritionResponse.ok) {
-      const errorText = await nutritionResponse.text()
-      console.error(`API Ninjas error (${nutritionResponse.status}):`, errorText)
-      throw new Error(`API request failed: ${nutritionResponse.status} ${errorText}`)
+    // Fetch nutrition data for each term separately
+    for (const term of searchTerms) {
+      const nutritionResponse = await fetch(
+        `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(term)}`,
+        {
+          headers: {
+            'X-Api-Key': apiKey,
+            'Content-Type': 'application/json'
+          }
+        }
+      )
+
+      if (!nutritionResponse.ok) {
+        console.error(`API error for term "${term}":`, nutritionResponse.status);
+        continue;
+      }
+
+      const data = await nutritionResponse.json();
+      if (data && data.length > 0) {
+        allNutritionData = [...allNutritionData, ...data];
+      }
     }
 
-    const nutritionData = await nutritionResponse.json()
-    console.log('API Ninjas response:', nutritionData)
+    console.log('Combined nutrition data:', allNutritionData);
 
-    if (!nutritionData || !nutritionData.length) {
+    if (!allNutritionData.length) {
       return new Response(
         JSON.stringify({ error: 'No nutrition data found for this food' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
@@ -85,23 +95,18 @@ serve(async (req) => {
     }
 
     // Sum up the nutrition values from all items
-    let totalCalories = 0;
-    let totalProtein = 0;
-    let totalCarbs = 0;
-    let totalFat = 0;
-
-    nutritionData.forEach((item: any) => {
-      totalCalories += Number(item.calories) || 0;
-      totalProtein += Number(item.protein_g) || 0;
-      totalCarbs += Number(item.carbohydrates_total_g) || 0;
-      totalFat += Number(item.fat_total_g) || 0;
-    });
+    const totals = allNutritionData.reduce((acc, item) => ({
+      calories: acc.calories + (parseFloat(item.calories) || 0),
+      protein: acc.protein + (parseFloat(item.protein_g) || 0),
+      carbs: acc.carbs + (parseFloat(item.carbohydrates_total_g) || 0),
+      fat: acc.fat + (parseFloat(item.fat_total_g) || 0)
+    }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
 
     // Round all values
-    const calories = Math.round(totalCalories);
-    const protein = Math.round(totalProtein);
-    const carbs = Math.round(totalCarbs);
-    const fat = Math.round(totalFat);
+    const calories = Math.round(totals.calories);
+    const protein = Math.round(totals.protein);
+    const carbs = Math.round(totals.carbs);
+    const fat = Math.round(totals.fat);
 
     // Basic health assessment
     const isHealthy = 
@@ -110,7 +115,7 @@ serve(async (req) => {
       fat < 30;  // Moderate fat content
 
     const analysis = {
-      foods: nutritionData.map((item: any) => item.name || query),
+      foods: allNutritionData.map(item => item.name || query),
       calories,
       protein,
       carbs,
