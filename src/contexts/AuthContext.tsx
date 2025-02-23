@@ -34,11 +34,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const initAuth = async () => {
       try {
         // First, check for an existing session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
-
+        const { data: { session } } = await supabase.auth.getSession();
+        
         if (session?.user) {
+          console.log("Found existing session for user:", session.user.id);
           await updateUserProfile(session.user);
+        } else {
+          console.log("No existing session found");
+          setUser(null);
         }
 
         // Then, set up the auth state listener
@@ -50,13 +53,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else {
             setUser(null);
             // Only navigate to /auth if we're not already there and we're not on the landing page
-            if (window.location.pathname !== '/auth' && window.location.pathname !== '/') {
+            const currentPath = window.location.pathname;
+            if (currentPath !== '/auth' && currentPath !== '/') {
               navigate('/auth');
             }
           }
         });
 
         setLoading(false);
+        
         return () => {
           subscription.unsubscribe();
         };
@@ -73,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log("Updating user profile for:", authUser.id);
       
+      // Get the user's profile from the profiles table
       const { data: profile, error } = await supabase
         .from('user_profiles')
         .select('*')
@@ -80,8 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single();
 
       if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching user profile:', error);
-        return;
+        throw error;
       }
 
       const userProfile: UserProfile = {
@@ -95,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
 
       setUser(userProfile);
+      console.log("User profile updated:", userProfile);
       
       // Don't redirect if we're already on a valid authenticated route
       if (window.location.pathname === '/auth' || window.location.pathname === '/') {
@@ -102,23 +108,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Error updating user profile:', error);
+      // Show error toast to user
+      toast({
+        title: "Error",
+        description: "Failed to load user profile. Please try signing in again.",
+        variant: "destructive",
+      });
     }
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
 
-      toast({
-        title: "Welcome back!",
-        description: "Successfully signed in.",
-      });
-      navigate("/dashboard");
+      if (data.user) {
+        await updateUserProfile(data.user);
+        toast({
+          title: "Welcome back!",
+          description: "Successfully signed in.",
+        });
+        navigate("/dashboard");
+      }
     } catch (error: any) {
       console.error("Sign in error:", error);
       toast({
@@ -131,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string, name: string) => {
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -143,11 +158,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) throw error;
 
-      toast({
-        title: "Welcome to FitX AI!",
-        description: "Your account has been created successfully.",
-      });
-      navigate("/onboarding");
+      if (data.user) {
+        await updateUserProfile(data.user);
+        toast({
+          title: "Welcome to FitX AI!",
+          description: "Your account has been created successfully.",
+        });
+        navigate("/onboarding");
+      }
     } catch (error: any) {
       console.error("Sign up error:", error);
       toast({
