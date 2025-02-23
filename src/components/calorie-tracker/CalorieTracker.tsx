@@ -4,9 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
-import { Plus, Minus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -20,32 +19,50 @@ interface FoodEntry {
 interface ActivityEntry {
   id: string;
   name: string;
-  caloriesBurned: number;
+  calories_burned: number;
   duration: number;
   timestamp: string;
 }
+
+const ACTIVITY_CALORIES = {
+  'walking': 4, // calories per minute
+  'running': 11.5,
+  'cycling': 8.5,
+  'swimming': 9,
+  'yoga': 3,
+  'weightlifting': 6,
+  'hiit': 12,
+  'dancing': 7,
+} as const;
 
 export function CalorieTracker() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [foodEntries, setFoodEntries] = useState<FoodEntry[]>([]);
   const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
-  const [newFood, setNewFood] = useState({ name: '', calories: '' });
-  const [newActivity, setNewActivity] = useState({ name: '', duration: '', caloriesBurned: '' });
+  const [newFood, setNewFood] = useState({ name: '', servingSize: '', quantity: '1' });
+  const [newActivity, setNewActivity] = useState({ 
+    name: 'walking', 
+    duration: '' 
+  });
   const [dailyCaloriesIn, setDailyCaloriesIn] = useState(0);
   const [dailyCaloriesBurned, setDailyCaloriesBurned] = useState(0);
+  const [previousDayBalance, setPreviousDayBalance] = useState(0);
 
-  // Load today's entries
+  // Load entries including previous day's balance
   useEffect(() => {
     if (user) {
       const today = new Date().toISOString().split('T')[0];
-      loadTodaysEntries(today);
+      const yesterday = new Date(new Date().setDate(new Date().getDate() - 1))
+        .toISOString().split('T')[0];
+      
+      loadEntries(today, yesterday);
     }
   }, [user]);
 
-  const loadTodaysEntries = async (today: string) => {
+  const loadEntries = async (today: string, yesterday: string) => {
     try {
-      // Load food entries
+      // Load today's food entries
       const { data: foodData } = await supabase
         .from('food_entries')
         .select('*')
@@ -59,7 +76,7 @@ export function CalorieTracker() {
         setDailyCaloriesIn(totalCaloriesIn);
       }
 
-      // Load activity entries
+      // Load today's activity entries
       const { data: activityData } = await supabase
         .from('activity_entries')
         .select('*')
@@ -69,31 +86,71 @@ export function CalorieTracker() {
 
       if (activityData) {
         setActivityEntries(activityData);
-        const totalCaloriesBurned = activityData.reduce((sum, entry) => sum + entry.caloriesBurned, 0);
+        const totalCaloriesBurned = activityData.reduce((sum, entry) => sum + entry.calories_burned, 0);
         setDailyCaloriesBurned(totalCaloriesBurned);
       }
+
+      // Calculate yesterday's balance
+      const { data: yesterdayFood } = await supabase
+        .from('food_entries')
+        .select('calories')
+        .eq('user_id', user?.id)
+        .gte('timestamp', yesterday)
+        .lt('timestamp', yesterday + 'T23:59:59');
+
+      const { data: yesterdayActivity } = await supabase
+        .from('activity_entries')
+        .select('calories_burned')
+        .eq('user_id', user?.id)
+        .gte('timestamp', yesterday)
+        .lt('timestamp', yesterday + 'T23:59:59');
+
+      const yesterdayCaloriesIn = yesterdayFood?.reduce((sum, entry) => sum + entry.calories, 0) || 0;
+      const yesterdayCaloriesBurned = yesterdayActivity?.reduce((sum, entry) => sum + entry.calories_burned, 0) || 0;
+      setPreviousDayBalance(yesterdayCaloriesIn - yesterdayCaloriesBurned);
+
     } catch (error) {
       console.error('Error loading entries:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load your entries",
+        variant: "destructive",
+      });
     }
   };
 
+  const calculateActivityCalories = (activity: string, duration: number) => {
+    const caloriesPerMinute = ACTIVITY_CALORIES[activity as keyof typeof ACTIVITY_CALORIES] || 5;
+    return Math.round(caloriesPerMinute * duration);
+  };
+
   const addFoodEntry = async () => {
-    if (!newFood.name || !newFood.calories) {
+    if (!newFood.name || !newFood.servingSize) {
       toast({
         title: "Missing Information",
-        description: "Please enter both food name and calories",
+        description: "Please enter both food name and serving size",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      const { data, error } = await supabase
+      // Fetch calorie information from API
+      const response = await fetch(`https://api.calorieninjas.com/v1/nutrition?query=${encodeURIComponent(newFood.name + ' ' + newFood.servingSize)}`, {
+        headers: {
+          'X-Api-Key': 'YOUR_API_NINJAS_KEY'
+        }
+      });
+      
+      const data = await response.json();
+      const calories = Math.round(data.items[0]?.calories || 0 * parseFloat(newFood.quantity));
+
+      const { data: entry, error } = await supabase
         .from('food_entries')
         .insert({
           user_id: user?.id,
           name: newFood.name,
-          calories: parseInt(newFood.calories),
+          calories: calories,
           timestamp: new Date().toISOString(),
         })
         .select()
@@ -101,13 +158,13 @@ export function CalorieTracker() {
 
       if (error) throw error;
 
-      setFoodEntries([...foodEntries, data]);
-      setDailyCaloriesIn(dailyCaloriesIn + parseInt(newFood.calories));
-      setNewFood({ name: '', calories: '' });
+      setFoodEntries([...foodEntries, entry]);
+      setDailyCaloriesIn(dailyCaloriesIn + calories);
+      setNewFood({ name: '', servingSize: '', quantity: '1' });
 
       toast({
         title: "Food Added",
-        description: `Added ${newFood.name} (${newFood.calories} calories)`,
+        description: `Added ${newFood.name} (${calories} calories)`,
       });
     } catch (error) {
       console.error('Error adding food entry:', error);
@@ -120,7 +177,7 @@ export function CalorieTracker() {
   };
 
   const addActivityEntry = async () => {
-    if (!newActivity.name || !newActivity.duration || !newActivity.caloriesBurned) {
+    if (!newActivity.name || !newActivity.duration) {
       toast({
         title: "Missing Information",
         description: "Please fill in all activity details",
@@ -130,13 +187,18 @@ export function CalorieTracker() {
     }
 
     try {
+      const caloriesBurned = calculateActivityCalories(
+        newActivity.name,
+        parseInt(newActivity.duration)
+      );
+
       const { data, error } = await supabase
         .from('activity_entries')
         .insert({
           user_id: user?.id,
           name: newActivity.name,
           duration: parseInt(newActivity.duration),
-          caloriesBurned: parseInt(newActivity.caloriesBurned),
+          calories_burned: caloriesBurned,
           timestamp: new Date().toISOString(),
         })
         .select()
@@ -145,12 +207,12 @@ export function CalorieTracker() {
       if (error) throw error;
 
       setActivityEntries([...activityEntries, data]);
-      setDailyCaloriesBurned(dailyCaloriesBurned + parseInt(newActivity.caloriesBurned));
-      setNewActivity({ name: '', duration: '', caloriesBurned: '' });
+      setDailyCaloriesBurned(dailyCaloriesBurned + caloriesBurned);
+      setNewActivity({ name: 'walking', duration: '' });
 
       toast({
         title: "Activity Added",
-        description: `Added ${newActivity.name} (${newActivity.caloriesBurned} calories burned)`,
+        description: `Added ${newActivity.name} (${caloriesBurned} calories burned)`,
       });
     } catch (error) {
       console.error('Error adding activity entry:', error);
@@ -162,7 +224,8 @@ export function CalorieTracker() {
     }
   };
 
-  const remainingCalories = dailyCaloriesIn - dailyCaloriesBurned;
+  const netCalories = dailyCaloriesIn - dailyCaloriesBurned;
+  const totalBalance = netCalories + previousDayBalance;
 
   return (
     <Card>
@@ -173,24 +236,34 @@ export function CalorieTracker() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Food Intake Section */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Food Intake</h3>
+            <h3 className="text-lg font-semibold">Add Food</h3>
             <div className="space-y-2">
               <Label htmlFor="foodName">Food Name</Label>
               <Input
                 id="foodName"
                 value={newFood.name}
                 onChange={(e) => setNewFood({ ...newFood, name: e.target.value })}
-                placeholder="Enter food name"
+                placeholder="e.g., pizza, apple, chicken breast"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="foodCalories">Calories</Label>
+              <Label htmlFor="servingSize">Serving Size</Label>
               <Input
-                id="foodCalories"
+                id="servingSize"
+                value={newFood.servingSize}
+                onChange={(e) => setNewFood({ ...newFood, servingSize: e.target.value })}
+                placeholder="e.g., 100g, 1 cup, 1 slice"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quantity">Quantity</Label>
+              <Input
+                id="quantity"
                 type="number"
-                value={newFood.calories}
-                onChange={(e) => setNewFood({ ...newFood, calories: e.target.value })}
-                placeholder="Enter calories"
+                min="0.25"
+                step="0.25"
+                value={newFood.quantity}
+                onChange={(e) => setNewFood({ ...newFood, quantity: e.target.value })}
               />
             </div>
             <Button onClick={addFoodEntry} className="w-full">
@@ -212,15 +285,21 @@ export function CalorieTracker() {
 
           {/* Activities Section */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Activities</h3>
+            <h3 className="text-lg font-semibold">Add Activity</h3>
             <div className="space-y-2">
-              <Label htmlFor="activityName">Activity Name</Label>
-              <Input
-                id="activityName"
+              <Label htmlFor="activityType">Activity Type</Label>
+              <select
+                id="activityType"
+                className="w-full rounded-md border border-input bg-background px-3 py-2"
                 value={newActivity.name}
                 onChange={(e) => setNewActivity({ ...newActivity, name: e.target.value })}
-                placeholder="Enter activity name"
-              />
+              >
+                {Object.keys(ACTIVITY_CALORIES).map((activity) => (
+                  <option key={activity} value={activity}>
+                    {activity.charAt(0).toUpperCase() + activity.slice(1)}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="duration">Duration (minutes)</Label>
@@ -230,16 +309,6 @@ export function CalorieTracker() {
                 value={newActivity.duration}
                 onChange={(e) => setNewActivity({ ...newActivity, duration: e.target.value })}
                 placeholder="Enter duration"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="caloriesBurned">Calories Burned</Label>
-              <Input
-                id="caloriesBurned"
-                type="number"
-                value={newActivity.caloriesBurned}
-                onChange={(e) => setNewActivity({ ...newActivity, caloriesBurned: e.target.value })}
-                placeholder="Enter calories burned"
               />
             </div>
             <Button onClick={addActivityEntry} className="w-full">
@@ -252,7 +321,7 @@ export function CalorieTracker() {
                 {activityEntries.map((entry) => (
                   <div key={entry.id} className="flex justify-between items-center p-2 bg-secondary/10 rounded">
                     <span>{entry.name} ({entry.duration} min)</span>
-                    <span>{entry.caloriesBurned} cal</span>
+                    <span>{entry.calories_burned} cal</span>
                   </div>
                 ))}
               </div>
@@ -262,20 +331,24 @@ export function CalorieTracker() {
 
         {/* Summary Section */}
         <div className="mt-6 p-4 bg-secondary/10 rounded-lg">
-          <h3 className="text-lg font-semibold mb-4">Daily Summary</h3>
-          <div className="grid grid-cols-3 gap-4 text-center">
+          <h3 className="text-lg font-semibold mb-4">Calorie Summary</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
             <div>
-              <p className="text-sm text-muted-foreground">Calories In</p>
-              <p className="text-2xl font-bold text-green-600">{dailyCaloriesIn}</p>
+              <p className="text-sm text-muted-foreground">Previous Day</p>
+              <p className="text-xl font-bold text-blue-600">{previousDayBalance}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Calories Burned</p>
-              <p className="text-2xl font-bold text-red-600">{dailyCaloriesBurned}</p>
+              <p className="text-sm text-muted-foreground">Today's Intake</p>
+              <p className="text-xl font-bold text-green-600">{dailyCaloriesIn}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Net Calories</p>
-              <p className={`text-2xl font-bold ${remainingCalories > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
-                {remainingCalories}
+              <p className="text-sm text-muted-foreground">Burned Today</p>
+              <p className="text-xl font-bold text-red-600">{dailyCaloriesBurned}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Balance</p>
+              <p className={`text-xl font-bold ${totalBalance > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
+                {totalBalance}
               </p>
             </div>
           </div>

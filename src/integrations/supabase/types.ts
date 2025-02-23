@@ -9,6 +9,63 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      activity_entries: {
+        Row: {
+          calories_burned: number
+          created_at: string
+          duration: number
+          id: string
+          name: string
+          timestamp: string
+          user_id: string
+        }
+        Insert: {
+          calories_burned: number
+          created_at?: string
+          duration: number
+          id?: string
+          name: string
+          timestamp?: string
+          user_id: string
+        }
+        Update: {
+          calories_burned?: number
+          created_at?: string
+          duration?: number
+          id?: string
+          name?: string
+          timestamp?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      food_entries: {
+        Row: {
+          calories: number
+          created_at: string
+          id: string
+          name: string
+          timestamp: string
+          user_id: string
+        }
+        Insert: {
+          calories: number
+          created_at?: string
+          id?: string
+          name: string
+          timestamp?: string
+          user_id: string
+        }
+        Update: {
+          calories?: number
+          created_at?: string
+          id?: string
+          name?: string
+          timestamp?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -152,7 +209,23 @@ export type Database = {
       workout_goal: "weight-loss" | "muscle-gain" | "endurance"
     }
     CompositeTypes: {
-      [_ in never]: never
+      activity_entry: {
+        id: string | null
+        user_id: string | null
+        name: string | null
+        duration: number | null
+        calories_burned: number | null
+        timestamp: string | null
+        created_at: string | null
+      }
+      food_entry: {
+        id: string | null
+        user_id: string | null
+        name: string | null
+        calories: number | null
+        timestamp: string | null
+        created_at: string | null
+      }
     }
   }
 }
