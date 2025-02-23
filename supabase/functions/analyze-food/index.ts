@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { HfInference } from 'https://esm.sh/@huggingface/inference@2.3.2'
 
@@ -139,7 +140,7 @@ serve(async (req) => {
     const description = result.generated_text.toLowerCase()
     console.log('Food description:', description)
 
-    // Smart food type detection
+    // Smart food type detection logic
     let mainFood = description
       .split(/,|\band\b/)[0]
       .trim()
@@ -217,21 +218,29 @@ serve(async (req) => {
       })
       .filter(food => food.length > 0)
 
-    // More comprehensive health assessment
+    // Updated health assessment logic
     const isExplicitlyUnhealthy = foods.some(food => 
       Array.from(unhealthyFoods).some(unhealthy => food.includes(unhealthy))
     )
 
     const hasHealthyKeywords = /salad|vegetable|fruit|lean|fish|grilled|steamed|boiled/.test(description)
     
+    // Updated nutrition scoring to consider low calories as unhealthy
     const nutritionScore = (
+      (nutrition.calories >= 200 && nutrition.calories <= 800 ? 1 : 0) + // Healthy calorie range
       (nutrition.protein_g > 15 ? 1 : 0) + // Good protein
-      (nutrition.calories < 400 ? 1 : 0) + // Reasonable calories
       (nutrition.fat_total_g < 15 ? 1 : 0) + // Moderate fat
       ((nutrition.carbohydrates_total_g / nutrition.protein_g) < 5 ? 1 : 0) // Good carb-to-protein ratio
     )
 
-    const isHealthy = !isExplicitlyUnhealthy && (hasHealthyKeywords || nutritionScore >= 2)
+    const isHealthy = !isExplicitlyUnhealthy && hasHealthyKeywords && nutritionScore >= 2
+
+    let healthyAlternative: string | undefined
+    if (nutrition.calories < 200) {
+      healthyAlternative = "This meal appears to be too low in calories. Consider adding more protein-rich foods like eggs, lean meat, or legumes to make it more nutritious and filling."
+    } else if (!isHealthy) {
+      healthyAlternative = "Consider healthier alternatives like grilled chicken with vegetables, a grain bowl with lean protein, or a fresh salad with grilled fish."
+    }
 
     const analysis = {
       foods: foods.map(food => food === 'indian flatbread' ? 'Chapati/Roti' : food),
@@ -239,11 +248,9 @@ serve(async (req) => {
       protein: Math.round(nutrition.protein_g),
       carbs: Math.round(nutrition.carbohydrates_total_g),
       fat: Math.round(nutrition.fat_total_g),
-      isHealthy: !isExplicitlyUnhealthy && (hasHealthyKeywords || nutritionScore >= 2),
-      explanation: `This ${foods[0] === 'indian flatbread' ? 'chapati/roti' : foods[0]} contains ${Math.round(nutrition.calories)} calories with ${Math.round(nutrition.protein_g)}g of protein, ${Math.round(nutrition.carbohydrates_total_g)}g of carbs, and ${Math.round(nutrition.fat_total_g)}g of fat.`,
-      healthyAlternative: isExplicitlyUnhealthy 
-        ? "Consider healthier alternatives like grilled chicken with vegetables, a grain bowl with lean protein, or a fresh salad with grilled fish."
-        : undefined
+      isHealthy: isHealthy,
+      explanation: `This meal contains ${Math.round(nutrition.calories)} calories with ${Math.round(nutrition.protein_g)}g of protein, ${Math.round(nutrition.carbohydrates_total_g)}g of carbs, and ${Math.round(nutrition.fat_total_g)}g of fat.`,
+      healthyAlternative
     }
 
     console.log('Final analysis:', analysis)
