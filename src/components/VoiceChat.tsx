@@ -20,17 +20,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
 
   useEffect(() => {
     // Initialize audio element
-    if (!audioRef.current) {
-      audioRef.current = new Audio();
-      audioRef.current.onerror = (e) => {
-        console.error('Audio error:', e);
-        toast({
-          title: "Error",
-          description: "Failed to play audio response. Please try again.",
-          variant: "destructive",
-        });
-      };
-    }
+    audioRef.current = new Audio();
 
     // Initialize speech recognition
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
@@ -98,16 +88,12 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         body: { text, userName: user?.name }
       });
 
-      console.log('Voice chat response:', { voiceData, voiceError });
-
       if (voiceError) throw voiceError;
 
       // Then convert response to speech
       const { data: speechData, error: speechError } = await supabase.functions.invoke('text-to-speech', {
         body: { text: voiceData.responseText }
       });
-
-      console.log('Text-to-speech response:', { speechData, speechError });
 
       if (speechError) throw speechError;
 
@@ -117,14 +103,17 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
 
       // Play the audio response
       if (audioRef.current) {
-        console.log('Setting up audio playback...');
         audioRef.current.src = `data:audio/mp3;base64,${speechData.audioContent}`;
+        audioRef.current.onerror = (e) => {
+          console.error('Audio error:', e);
+          throw new Error('Failed to play audio');
+        };
         
         try {
           await audioRef.current.play();
           console.log('Audio started playing');
         } catch (playError) {
-          console.error('Audio playback error:', playError);
+          console.error('Error playing audio:', playError);
           throw playError;
         }
       }
@@ -147,18 +136,20 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
 
   return (
     <div className="fixed inset-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-50 flex flex-col items-center justify-center">
-      <button 
+      <Button 
         onClick={onClose}
+        variant="ghost"
+        size="icon"
         className="absolute top-4 right-4 p-2 hover:bg-accent rounded-full"
       >
         <X className="h-6 w-6" />
-      </button>
+      </Button>
 
       <div className="relative w-32 h-32 mb-8">
         <div className="absolute inset-0 rounded-full bg-blue-500/20" />
         <div 
           className={`absolute inset-2 rounded-full bg-gradient-to-b from-blue-400 to-blue-600 transition-transform ${
-            isRecording ? 'animate-[pulse_1s_ease-in-out_infinite] scale-110' : ''
+            isRecording ? 'scale-110' : ''
           }`}
           style={{
             transform: isRecording ? `scale(${1 + Math.sin(Date.now() / 500) * 0.1})` : 'scale(1)',

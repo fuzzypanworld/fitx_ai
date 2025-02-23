@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,14 +8,14 @@ import { supabase } from "@/integrations/supabase/client"
 import { cn } from "@/lib/utils"
 
 interface FoodAnalysis {
-  foods: string[]
-  calories: number
-  protein: number
-  carbs: number
-  fat: number
-  isHealthy: boolean
-  healthyAlternative?: string
-  explanation: string
+  foods: string[];
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  isHealthy: boolean;
+  healthyAlternative?: string;
+  explanation: string;
 }
 
 export const FoodAnalyzer = () => {
@@ -64,44 +63,45 @@ export const FoodAnalyzer = () => {
     if (!selectedImage) return
 
     try {
-      setIsAnalyzing(true)
+      setIsAnalyzing(true);
       
       // Upload image to Supabase Storage
-      const fileName = `${Date.now()}-${selectedImage.name}`
+      const fileName = `${Date.now()}-${selectedImage.name}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('food-images')
-        .upload(fileName, selectedImage)
+        .upload(fileName, selectedImage);
 
-      if (uploadError) throw uploadError
+      if (uploadError) throw uploadError;
 
       // Get public URL of the uploaded image
       const { data: { publicUrl } } = supabase.storage
         .from('food-images')
-        .getPublicUrl(fileName)
+        .getPublicUrl(fileName);
 
       // Analyze the image using our edge function
       const { data: analysisData, error: analysisError } = await supabase.functions
         .invoke('analyze-food', {
           body: { imageUrl: publicUrl }
-        })
+        });
 
-      if (analysisError) throw analysisError
+      if (analysisError) throw analysisError;
 
-      setAnalysis(analysisData)
+      console.log('Analysis data:', analysisData); // Debug log
+      setAnalysis(analysisData);
       
       toast({
         title: "Analysis Complete! 🎉",
         description: "Check out the nutritional breakdown below.",
-      })
+      });
     } catch (error) {
-      console.error('Error analyzing image:', error)
+      console.error('Error analyzing image:', error);
       toast({
         title: "Error",
         description: "Failed to analyze the image. Please try again.",
         variant: "destructive"
-      })
+      });
     } finally {
-      setIsAnalyzing(false)
+      setIsAnalyzing(false);
     }
   }
 
