@@ -3,7 +3,6 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Mic, X } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
 
 interface VoiceChatProps {
   onClose: () => void;
@@ -12,9 +11,15 @@ interface VoiceChatProps {
 class AudioRecorder {
   private stream: MediaStream | null = null;
   private mediaRecorder: MediaRecorder | null = null;
-  private audioChunks: Blob[] = [];
-
-  constructor(private onAudioData: (audioData: string) => void) {}
+  private audioContext: AudioContext | null = null;
+  private analyzer: AnalyserNode | null = null;
+  private dataArray: Uint8Array | null = null;
+  private animationFrame: number | null = null;
+  
+  constructor(
+    private onAudioData: (audioData: string) => void,
+    private onAmplitude: (amplitude: number) => void
+  ) {}
 
   async start() {
     try {
@@ -26,17 +31,26 @@ class AudioRecorder {
         }
       });
       
+      this.audioContext = new AudioContext();
+      const source = this.audioContext.createMediaStreamSource(this.stream);
+      this.analyzer = this.audioContext.createAnalyser();
+      this.analyzer.fftSize = 256;
+      source.connect(this.analyzer);
+      
+      this.dataArray = new Uint8Array(this.analyzer.frequencyBinCount);
+      this.startVisualization();
+      
       this.mediaRecorder = new MediaRecorder(this.stream);
-      this.audioChunks = [];
+      const chunks: Blob[] = [];
       
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
-          this.audioChunks.push(event.data);
+          chunks.push(event.data);
         }
       };
       
       this.mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = () => {
@@ -47,14 +61,29 @@ class AudioRecorder {
         };
       };
       
-      this.mediaRecorder.start(1000); // Collect data every second
+      this.mediaRecorder.start(1000);
     } catch (error) {
       console.error('Error accessing microphone:', error);
       throw error;
     }
   }
 
+  private startVisualization = () => {
+    const updateVisualization = () => {
+      if (this.analyzer && this.dataArray) {
+        this.analyzer.getByteFrequencyData(this.dataArray);
+        const amplitude = Math.max(...Array.from(this.dataArray)) / 255;
+        this.onAmplitude(amplitude);
+      }
+      this.animationFrame = requestAnimationFrame(updateVisualization);
+    };
+    this.animationFrame = requestAnimationFrame(updateVisualization);
+  };
+
   stop() {
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+    }
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
       this.mediaRecorder.stop();
     }
@@ -62,6 +91,12 @@ class AudioRecorder {
       this.stream.getTracks().forEach(track => track.stop());
       this.stream = null;
     }
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
+    }
+    this.analyzer = null;
+    this.dataArray = null;
     this.mediaRecorder = null;
   }
 
@@ -71,13 +106,14 @@ class AudioRecorder {
 }
 
 const VoiceChat = ({ onClose }: VoiceChatProps) => {
-  const { user } = useAuth();
   const { toast } = useToast();
   const [isActive, setIsActive] = useState(false);
+  const [amplitude, setAmplitude] = useState(0);
   const [lastTranscript, setLastTranscript] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const speakingRef = useRef(false);
 
   useEffect(() => {
     audioRef.current = new Audio();
@@ -101,36 +137,28 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
     }
     
     setIsActive(false);
+    setAmplitude(0);
   }, []);
 
   const startRecording = useCallback(async () => {
     try {
-      wsRef.current = new WebSocket(`wss://olcnfmrixglengxpiexf.supabase.co/functions/v1/voice-chat`);
+      wsRef.current = new WebSocket(`wss://olcnfmrixglengxpiexf.supabase.co/functions/v1/voice-chat?tts=google`);
       
-      const connectionTimeout = setTimeout(() => {
-        if (wsRef.current?.readyState !== WebSocket.OPEN) {
-          toast({
-            title: "Connection Timeout",
-            description: "Could not establish connection. Please try again.",
-            variant: "destructive",
-          });
-          stopRecording();
-        }
-      }, 5000);
-
       wsRef.current.onopen = async () => {
-        clearTimeout(connectionTimeout);
         console.log("WebSocket connection established");
         
         try {
-          recorderRef.current = new AudioRecorder((audioData) => {
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({
-                type: 'audio',
-                audio: audioData
-              }));
-            }
-          });
+          recorderRef.current = new AudioRecorder(
+            (audioData) => {
+              if (wsRef.current?.readyState === WebSocket.OPEN && !speakingRef.current) {
+                wsRef.current.send(JSON.stringify({
+                  type: 'audio',
+                  audio: audioData
+                }));
+              }
+            },
+            setAmplitude
+          );
           
           await recorderRef.current.start();
           setIsActive(true);
@@ -167,6 +195,12 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
           if (data.type === 'transcript') {
             setLastTranscript(data.text);
           } else if (data.type === 'response') {
+            speakingRef.current = true;
+            if (audioRef.current) {
+              audioRef.current.onended = () => {
+                speakingRef.current = false;
+              };
+            }
             toast({
               title: "Assistant",
               description: data.text,
@@ -195,6 +229,8 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
     };
   }, [stopRecording]);
 
+  const scale = 1 + (amplitude * 0.5);
+
   return (
     <div className="fixed inset-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-50 flex flex-col items-center justify-center">
       <Button 
@@ -209,9 +245,8 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       <div className="relative w-32 h-32 mb-8">
         <div className="absolute inset-0 rounded-full bg-blue-500/20" />
         <div 
-          className={`absolute inset-2 rounded-full bg-gradient-to-b from-blue-400 to-blue-600 transition-transform ${
-            isActive ? 'scale-110 animate-pulse' : ''
-          }`}
+          className="absolute inset-2 rounded-full bg-gradient-to-b from-blue-400 to-blue-600 transition-transform duration-100"
+          style={{ transform: `scale(${scale})` }}
         />
         <Button
           onClick={isActive ? stopRecording : startRecording}

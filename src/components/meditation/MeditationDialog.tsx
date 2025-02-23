@@ -49,8 +49,8 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
       console.log("Starting meditation session...");
       const introText = "Welcome to your meditation session. Let's begin with deep breathing exercises. I'll guide you through each breath.";
       
-      const { data, error } = await supabase.functions.invoke('elevenlabs-tts', {
-        body: { text: introText }
+      const { data, error } = await supabase.functions.invoke('text-to-speech', {
+        body: { text: introText, tts: 'google' }
       });
 
       console.log("Text-to-speech response:", { data, error });
@@ -88,8 +88,8 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
     try {
       if (!audioRef.current) return;
 
-      const { data, error } = await supabase.functions.invoke('elevenlabs-tts', {
-        body: { text }
+      const { data, error } = await supabase.functions.invoke('text-to-speech', {
+        body: { text, tts: 'google' }
       });
 
       if (error) throw error;
