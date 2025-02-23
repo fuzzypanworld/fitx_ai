@@ -6,7 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 }
 
-// Common exercise recommendations based on calories
 function getExerciseRecommendations(calories: number) {
   if (!calories || isNaN(calories)) return [];
   
@@ -59,7 +58,6 @@ serve(async (req) => {
       )
     }
 
-    console.log('Making API Ninjas request for:', query)
     const nutritionResponse = await fetch(
       `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(query)}`,
       {
@@ -86,24 +84,24 @@ serve(async (req) => {
       )
     }
 
-    // Calculate total nutrition values
-    const totalNutrition = nutritionData.reduce((acc: any, item: any) => ({
-      calories: (acc.calories || 0) + (item.calories || 0),
-      protein_g: (acc.protein_g || 0) + (item.protein_g || 0),
-      carbohydrates_total_g: (acc.carbohydrates_total_g || 0) + (item.carbohydrates_total_g || 0),
-      fat_total_g: (acc.fat_total_g || 0) + (item.fat_total_g || 0)
-    }), {
-      calories: 0,
-      protein_g: 0,
-      carbohydrates_total_g: 0,
-      fat_total_g: 0
-    })
+    // Sum up the nutrition values from all items
+    let totalCalories = 0;
+    let totalProtein = 0;
+    let totalCarbs = 0;
+    let totalFat = 0;
 
-    // Ensure we have valid numbers
-    const calories = Math.round(totalNutrition.calories) || 0
-    const protein = Math.round(totalNutrition.protein_g) || 0
-    const carbs = Math.round(totalNutrition.carbohydrates_total_g) || 0
-    const fat = Math.round(totalNutrition.fat_total_g) || 0
+    nutritionData.forEach((item: any) => {
+      totalCalories += Number(item.calories) || 0;
+      totalProtein += Number(item.protein_g) || 0;
+      totalCarbs += Number(item.carbohydrates_total_g) || 0;
+      totalFat += Number(item.fat_total_g) || 0;
+    });
+
+    // Round all values
+    const calories = Math.round(totalCalories);
+    const protein = Math.round(totalProtein);
+    const carbs = Math.round(totalCarbs);
+    const fat = Math.round(totalFat);
 
     // Basic health assessment
     const isHealthy = 
