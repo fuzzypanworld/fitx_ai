@@ -21,12 +21,12 @@ serve(async (req) => {
 
     console.log('Generating speech for text:', text)
 
-    // Using Charlie's voice ID
+    // Using Charlie's voice ID with non-streaming endpoint for reliability
     const VOICE_ID = 'IKne3meq5aSn9XLyUdCD'
-    const MODEL_ID = 'eleven_multilingual_v2'
+    const MODEL_ID = 'eleven_monolingual_v1'
 
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
       {
         method: 'POST',
         headers: {
@@ -38,7 +38,7 @@ serve(async (req) => {
           text,
           model_id: MODEL_ID,
           voice_settings: {
-            stability: 0.5,
+            stability: 0.75,
             similarity_boost: 0.75,
           },
         }),
@@ -54,6 +54,8 @@ serve(async (req) => {
     // Convert audio buffer to base64
     const arrayBuffer = await response.arrayBuffer()
     const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+
+    console.log('Successfully generated audio')
 
     return new Response(
       JSON.stringify({ audioContent: base64Audio }),
