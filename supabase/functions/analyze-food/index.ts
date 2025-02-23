@@ -21,7 +21,7 @@ serve(async (req) => {
     }
 
     const hf = new HfInference(Deno.env.get('HUGGING_FACE_ACCESS_TOKEN'))
-    console.log('Analyzing image with Hugging Face...')
+    console.log('Analyzing image with Hugging Face...', imageUrl)
 
     // Use a pre-trained model for image analysis
     const result = await hf.imageToText({
@@ -29,17 +29,22 @@ serve(async (req) => {
       inputs: imageUrl,
     })
 
+    console.log('Raw analysis result:', result)
+
+    // Extract the text from the result (the API returns { generated_text: string })
+    const text = (typeof result === 'object' && result.generated_text) 
+      ? result.generated_text.toLowerCase()
+      : String(result).toLowerCase()
+
+    console.log('Processed text:', text)
+
     // Process the result into our expected format
-    // Simple rules for demonstration:
-    // - If it contains words like "salad", "vegetable", "fruit" -> healthy
-    // - If it contains words like "pizza", "burger", "fries" -> less healthy
-    const text = result.toLowerCase()
     const isHealthy = text.match(/salad|vegetable|fruit|healthy|lean/) !== null
     const unhealthyMatch = text.match(/pizza|burger|fries|fried|processed/)
 
     const analysis = {
-      foods: [result],
-      calories: isHealthy ? 300 : 600, // Estimated values
+      foods: [text.split(' and ').map(food => food.trim())].flat(), // Split on 'and' to get individual foods
+      calories: isHealthy ? 300 : 600,
       protein: isHealthy ? 15 : 20,
       carbs: isHealthy ? 30 : 50,
       fat: isHealthy ? 10 : 25,
@@ -52,16 +57,22 @@ serve(async (req) => {
         : undefined
     }
 
-    console.log('Analysis complete:', analysis)
+    console.log('Final analysis:', analysis)
     return new Response(
       JSON.stringify(analysis),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
-    console.error('Error:', error)
+    console.error('Error analyzing image:', error)
     return new Response(
-      JSON.stringify({ error: error.message }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      JSON.stringify({ 
+        error: 'Failed to analyze image',
+        details: error.message 
+      }),
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      }
     )
   }
 })
