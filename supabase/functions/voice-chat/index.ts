@@ -1,147 +1,156 @@
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { TextToSpeechClient } from 'https://esm.sh/@google-cloud/text-to-speech@5.0.1'
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import OpenAI from 'https://esm.sh/openai@4.20.1'
+import { WebSocket, WebSocketServer } from 'https://deno.land/x/websocket@v0.1.4/mod.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Create a WebSocket server
+const wss = new WebSocketServer(8080)
+const sockets = new Map<string, WebSocket>()
+
+console.log("Voice chat WebSocket server starting...")
+
+// Functions to handle incoming messages
+async function handleSpeechToText(audioBase64: string): Promise<string> {
+  const response = await fetch('https://speech.googleapis.com/v1/speech:recognize', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${Deno.env.get('GOOGLE_ACCESS_TOKEN')}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      config: {
+        encoding: 'WEBM_OPUS',
+        sampleRateHertz: 48000,
+        languageCode: 'en-US',
+        model: 'default'
+      },
+      audio: {
+        content: audioBase64
+      }
+    })
+  });
+
+  if (!response.ok) {
+    console.error('Speech-to-text error:', await response.text());
+    throw new Error('Speech-to-text failed');
+  }
+
+  const data = await response.json();
+  return data.results?.[0]?.alternatives?.[0]?.transcript || '';
+}
+
+async function handleTextToSpeech(text: string): Promise<string> {
+  const response = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${Deno.env.get('GOOGLE_ACCESS_TOKEN')}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      input: { text },
+      voice: { 
+        languageCode: 'en-US',
+        name: 'en-US-Neural2-F',
+        ssmlGender: 'FEMALE'
+      },
+      audioConfig: {
+        audioEncoding: 'MP3'
+      }
+    })
+  });
+
+  if (!response.ok) {
+    console.error('Text-to-speech error:', await response.text());
+    throw new Error('Text-to-speech failed');
+  }
+
+  const data = await response.json();
+  return data.audioContent || '';
+}
+
+// Handle WebSocket connections
+wss.on('connection', (ws: WebSocket) => {
+  const id = crypto.randomUUID()
+  sockets.set(id, ws)
+  console.log('New WebSocket connection:', id)
+
+  ws.on('message', async (message: string) => {
+    try {
+      const data = JSON.parse(message)
+      console.log('Received message type:', data.type)
+
+      if (data.type === 'audio') {
+        // Convert speech to text
+        const transcript = await handleSpeechToText(data.audio)
+        ws.send(JSON.stringify({ type: 'transcript', text: transcript }))
+
+        // Get response from OpenAI
+        const openai = new OpenAI({
+          apiKey: Deno.env.get('OPENAI_API_KEY')
+        })
+
+        const completion = await openai.chat.completions.create({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "system",
+              content: "You are a helpful AI assistant that provides concise responses."
+            },
+            {
+              role: "user",
+              content: transcript
+            }
+          ]
+        })
+
+        const responseText = completion.choices[0]?.message?.content || "I'm sorry, I couldn't process that."
+        ws.send(JSON.stringify({ type: 'response', text: responseText }))
+
+        // Convert response to speech
+        const audioContent = await handleTextToSpeech(responseText)
+        ws.send(JSON.stringify({ type: 'audio', audio: audioContent }))
+      }
+    } catch (error) {
+      console.error('Error processing message:', error)
+      ws.send(JSON.stringify({ type: 'error', message: error.message }))
+    }
+  })
+
+  ws.on('close', () => {
+    console.log('WebSocket connection closed:', id)
+    sockets.delete(id)
+  })
+})
+
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { response, socket } = Deno.upgradeWebSocket(req)
+    const url = new URL(req.url)
+    const tts = url.searchParams.get('tts') || 'google'
 
-    socket.onopen = () => {
-      console.log("WebSocket connection established")
+    if (req.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+      return new Response('Expected websocket', { status: 400 })
     }
 
-    socket.onmessage = async (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        
-        if (data.type === 'audio') {
-          console.log('Processing audio input...')
-          const audioData = Uint8Array.from(atob(data.audio), c => c.charCodeAt(0))
-          
-          // Transcribe audio using Whisper API
-          console.log('Transcribing audio...')
-          const formData = new FormData()
-          formData.append('file', new Blob([audioData]), 'audio.webm')
-          formData.append('model', 'whisper-1')
-
-          const transcriptionResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-            },
-            body: formData,
-          })
-
-          if (!transcriptionResponse.ok) {
-            throw new Error('Failed to transcribe audio')
-          }
-
-          const { text } = await transcriptionResponse.json()
-          console.log('Transcribed text:', text)
-          
-          socket.send(JSON.stringify({ type: 'transcript', text }))
-
-          // Generate response using Gemini
-          console.log('Generating response with Gemini...')
-          const geminiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': Deno.env.get('GEMINI_API_KEY') || '',
-            },
-            body: JSON.stringify({
-              contents: [{
-                parts: [{
-                  text: `You are a helpful AI fitness assistant. Keep responses brief and focused on health, fitness, and wellbeing. User message: ${text}`
-                }]
-              }],
-              generationConfig: {
-                temperature: 0.7,
-                topK: 40,
-                topP: 0.95,
-                maxOutputTokens: 1024,
-              }
-            })
-          })
-
-          if (!geminiResponse.ok) {
-            throw new Error('Failed to generate response')
-          }
-
-          const geminiResult = await geminiResponse.json()
-          const responseText = geminiResult.candidates[0].content.parts[0].text
-          console.log('Generated response:', responseText)
-
-          // Convert response to speech using Google TTS
-          console.log('Converting to speech using Google TTS...')
-          const client = new TextToSpeechClient()
-          const [ttsResponse] = await client.synthesizeSpeech({
-            input: { text: responseText },
-            voice: {
-              languageCode: 'en-US',
-              name: 'en-US-Standard-I',
-              ssmlGender: 'FEMALE'
-            },
-            audioConfig: { audioEncoding: 'MP3' }
-          })
-
-          if (!ttsResponse.audioContent) {
-            throw new Error('No audio content received from Google TTS')
-          }
-
-          socket.send(JSON.stringify({ 
-            type: 'response',
-            text: responseText,
-          }))
-
-          const base64Audio = btoa(String.fromCharCode(...new Uint8Array(ttsResponse.audioContent)))
-          socket.send(JSON.stringify({
-            type: 'audio',
-            audio: base64Audio
-          }))
-
-          console.log('Audio response sent successfully')
-        }
-      } catch (error) {
-        console.error('Error processing message:', error)
-        socket.send(JSON.stringify({ 
-          type: 'error', 
-          message: error.message,
-          details: error.stack
-        }))
-      }
-    }
-
-    socket.onerror = (e) => {
-      console.error("WebSocket error:", e)
-    }
-    
-    socket.onclose = () => {
-      console.log("WebSocket connection closed")
-    }
+    const { socket, response } = Deno.upgradeWebSocket(req)
+    const id = crypto.randomUUID()
+    sockets.set(id, socket as unknown as WebSocket)
 
     return response
-
   } catch (error) {
-    console.error('Error setting up WebSocket:', error)
-    return new Response(
-      JSON.stringify({ 
-        error: error.message,
-        details: error.stack 
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
+    console.error('Server error:', error)
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 })

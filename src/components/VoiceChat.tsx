@@ -40,7 +40,9 @@ class AudioRecorder {
       this.dataArray = new Uint8Array(this.analyzer.frequencyBinCount);
       this.startVisualization();
       
-      this.mediaRecorder = new MediaRecorder(this.stream);
+      this.mediaRecorder = new MediaRecorder(this.stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
       const chunks: Blob[] = [];
       
       this.mediaRecorder.ondataavailable = (event) => {
@@ -196,11 +198,6 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
             setLastTranscript(data.text);
           } else if (data.type === 'response') {
             speakingRef.current = true;
-            if (audioRef.current) {
-              audioRef.current.onended = () => {
-                speakingRef.current = false;
-              };
-            }
             toast({
               title: "Assistant",
               description: data.text,
@@ -208,6 +205,9 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
           } else if (data.type === 'audio' && audioRef.current && data.audio) {
             audioRef.current.src = `data:audio/mp3;base64,${data.audio}`;
             await audioRef.current.play();
+            audioRef.current.onended = () => {
+              speakingRef.current = false;
+            };
           }
         } catch (parseError) {
           console.error('Error parsing WebSocket message:', parseError);
