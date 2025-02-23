@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { HfInference } from 'https://esm.sh/@huggingface/inference@2.3.2'
 
@@ -51,38 +50,51 @@ const unhealthyFoods = new Set([
   'soda', 'cookie', 'pie'
 ])
 
-// Default nutrition values for common foods that might not be in the API
+// Updated default nutrition values for common foods that might not be in the API
 const defaultNutritionValues = {
   // Indian breads (values per piece)
   flatbread: {
-    calories: 80,
-    protein_g: 2.5,
-    carbohydrates_total_g: 15,
-    fat_total_g: 0.8
+    calories: 120,
+    protein_g: 3,
+    carbohydrates_total_g: 20,
+    fat_total_g: 3
   },
   'indian flatbread': {
-    calories: 80,
-    protein_g: 2.5,
-    carbohydrates_total_g: 15,
-    fat_total_g: 0.8
+    calories: 120,
+    protein_g: 3,
+    carbohydrates_total_g: 20,
+    fat_total_g: 3
   },
   'chapati': {
-    calories: 80,
-    protein_g: 2.5,
-    carbohydrates_total_g: 15,
-    fat_total_g: 0.8
+    calories: 120,
+    protein_g: 3,
+    carbohydrates_total_g: 20,
+    fat_total_g: 3
   },
   'roti': {
-    calories: 80,
-    protein_g: 2.5,
-    carbohydrates_total_g: 15,
-    fat_total_g: 0.8
+    calories: 120,
+    protein_g: 3,
+    carbohydrates_total_g: 20,
+    fat_total_g: 3
   },
   'naan': {
+    calories: 260,
+    protein_g: 9,
+    carbohydrates_total_g: 48,
+    fat_total_g: 3.3
+  },
+  // Curries (values per serving)
+  'curry': {
+    calories: 250,
+    protein_g: 15,
+    carbohydrates_total_g: 15,
+    fat_total_g: 15
+  },
+  'vegetable curry': {
     calories: 180,
-    protein_g: 5,
-    carbohydrates_total_g: 34,
-    fat_total_g: 2.7
+    protein_g: 6,
+    carbohydrates_total_g: 20,
+    fat_total_g: 10
   },
   // Asian noodles (values per cup cooked)
   'noodles': {
@@ -141,82 +153,85 @@ serve(async (req) => {
     console.log('Food description:', description)
 
     // Smart food type detection logic
-    let mainFood = description
-      .split(/,|\band\b/)[0]
-      .trim()
-      .replace(/^(a|an|the)\s+/, '')
+    let detectedFoods = description
+      .split(/,|\band\b/)
+      .map(food => food.trim())
+      .filter(food => food.length > 0)
 
-    // Check if the description matches Indian bread patterns
-    const hasIndianBreadIndicators = indianBreadKeywords.some(keyword => 
-      description.includes(keyword)
-    )
-
-    if (hasIndianBreadIndicators) {
-      console.log('Detected possible Indian bread from keywords')
-      mainFood = 'indian flatbread'
-    } else {
-      // Check normal food mappings
-      for (const [key, value] of Object.entries(foodMappings)) {
-        if (description.includes(key)) {
-          mainFood = value
-          break
-        }
-      }
+    // Calculate total nutrition by combining all detected foods
+    let totalNutrition = {
+      calories: 0,
+      protein_g: 0,
+      carbohydrates_total_g: 0,
+      fat_total_g: 0
     }
 
-    console.log('Mapped food query:', mainFood)
+    for (const food of detectedFoods) {
+      let nutritionForFood = null
 
-    // First check our default values
-    let nutrition = defaultNutritionValues[mainFood as keyof typeof defaultNutritionValues]
-
-    // If not in our defaults, try the API
-    if (!nutrition) {
-      const apiKey = Deno.env.get('API_NINJAS_KEY')
-      if (!apiKey) {
-        return new Response(
-          JSON.stringify({ error: 'Missing API Ninjas configuration' }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-        )
-      }
-
-      const nutritionResponse = await fetch(
-        `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(mainFood)}`, 
-        {
-          headers: {
-            'X-Api-Key': apiKey,
-            'Content-Type': 'application/json'
+      // Check if it's a bread item
+      if (indianBreadKeywords.some(keyword => food.includes(keyword))) {
+        nutritionForFood = defaultNutritionValues['indian flatbread']
+      } else {
+        // Check food mappings
+        for (const [key, value] of Object.entries(foodMappings)) {
+          if (food.includes(key)) {
+            nutritionForFood = defaultNutritionValues[value as keyof typeof defaultNutritionValues]
+            break
           }
         }
-      )
-
-      if (!nutritionResponse.ok) {
-        throw new Error('Failed to fetch nutrition data')
       }
 
-      const nutritionData = await nutritionResponse.json()
-      console.log('API Nutrition data:', nutritionData)
-      
-      nutrition = nutritionData[0] || defaultNutritionValues['flatbread'] // Fallback to flatbread values
+      // If no mapping found, try API
+      if (!nutritionForFood) {
+        try {
+          const apiKey = Deno.env.get('API_NINJAS_KEY')
+          if (!apiKey) {
+            throw new Error('Missing API Ninjas configuration')
+          }
+
+          const nutritionResponse = await fetch(
+            `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(food)}`, 
+            {
+              headers: {
+                'X-Api-Key': apiKey,
+                'Content-Type': 'application/json'
+              }
+            }
+          )
+
+          if (nutritionResponse.ok) {
+            const data = await nutritionResponse.json()
+            if (data && data[0]) {
+              nutritionForFood = data[0]
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching nutrition data for', food, error)
+        }
+      }
+
+      // Add nutrition values to total
+      if (nutritionForFood) {
+        totalNutrition.calories += nutritionForFood.calories
+        totalNutrition.protein_g += nutritionForFood.protein_g
+        totalNutrition.carbohydrates_total_g += nutritionForFood.carbohydrates_total_g
+        totalNutrition.fat_total_g += nutritionForFood.fat_total_g
+      }
     }
 
     // Clean up the foods array and map any recognized terms
-    const foods = description
-      .split(/,|\band\b/)
-      .map(food => {
-        const cleaned = food.trim()
-        // Check if this is an Indian bread by keywords
-        if (indianBreadKeywords.some(keyword => cleaned.includes(keyword))) {
-          return 'Indian flatbread'
+    const foods = detectedFoods.map(food => {
+      if (indianBreadKeywords.some(keyword => food.includes(keyword))) {
+        return 'Indian flatbread'
+      }
+      for (const [key, value] of Object.entries(foodMappings)) {
+        if (food.includes(key)) {
+          return value
         }
-        // Return mapped food name if available
-        for (const [key, value] of Object.entries(foodMappings)) {
-          if (cleaned.includes(key)) {
-            return value
-          }
-        }
-        return cleaned
-      })
-      .filter(food => food.length > 0)
+      }
+      return food
+    })
 
     // Updated health assessment logic
     const isExplicitlyUnhealthy = foods.some(food => 
@@ -225,18 +240,18 @@ serve(async (req) => {
 
     const hasHealthyKeywords = /salad|vegetable|fruit|lean|fish|grilled|steamed|boiled/.test(description)
     
-    // Updated nutrition scoring to consider low calories as unhealthy
+    // Updated nutrition scoring to consider reasonable calorie range
     const nutritionScore = (
-      (nutrition.calories >= 200 && nutrition.calories <= 800 ? 1 : 0) + // Healthy calorie range
-      (nutrition.protein_g > 15 ? 1 : 0) + // Good protein
-      (nutrition.fat_total_g < 15 ? 1 : 0) + // Moderate fat
-      ((nutrition.carbohydrates_total_g / nutrition.protein_g) < 5 ? 1 : 0) // Good carb-to-protein ratio
+      (totalNutrition.calories >= 200 && totalNutrition.calories <= 800 ? 1 : 0) + // Healthy calorie range
+      (totalNutrition.protein_g > 15 ? 1 : 0) + // Good protein
+      (totalNutrition.fat_total_g < 30 ? 1 : 0) + // Moderate fat
+      ((totalNutrition.carbohydrates_total_g / totalNutrition.protein_g) < 5 ? 1 : 0) // Good carb-to-protein ratio
     )
 
     const isHealthy = !isExplicitlyUnhealthy && hasHealthyKeywords && nutritionScore >= 2
 
     let healthyAlternative: string | undefined
-    if (nutrition.calories < 200) {
+    if (totalNutrition.calories < 200) {
       healthyAlternative = "This meal appears to be too low in calories. Consider adding more protein-rich foods like eggs, lean meat, or legumes to make it more nutritious and filling."
     } else if (!isHealthy) {
       healthyAlternative = "Consider healthier alternatives like grilled chicken with vegetables, a grain bowl with lean protein, or a fresh salad with grilled fish."
@@ -244,12 +259,12 @@ serve(async (req) => {
 
     const analysis = {
       foods: foods.map(food => food === 'indian flatbread' ? 'Chapati/Roti' : food),
-      calories: Math.round(nutrition.calories),
-      protein: Math.round(nutrition.protein_g),
-      carbs: Math.round(nutrition.carbohydrates_total_g),
-      fat: Math.round(nutrition.fat_total_g),
+      calories: Math.round(totalNutrition.calories),
+      protein: Math.round(totalNutrition.protein_g),
+      carbs: Math.round(totalNutrition.carbohydrates_total_g),
+      fat: Math.round(totalNutrition.fat_total_g),
       isHealthy: isHealthy,
-      explanation: `This meal contains ${Math.round(nutrition.calories)} calories with ${Math.round(nutrition.protein_g)}g of protein, ${Math.round(nutrition.carbohydrates_total_g)}g of carbs, and ${Math.round(nutrition.fat_total_g)}g of fat.`,
+      explanation: `This meal contains ${Math.round(totalNutrition.calories)} calories with ${Math.round(totalNutrition.protein_g)}g of protein, ${Math.round(totalNutrition.carbohydrates_total_g)}g of carbs, and ${Math.round(totalNutrition.fat_total_g)}g of fat.`,
       healthyAlternative
     }
 
