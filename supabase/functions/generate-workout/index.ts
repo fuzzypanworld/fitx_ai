@@ -22,17 +22,21 @@ serve(async (req) => {
       - Workout Frequency: ${frequency} times per week
       - Additional Preferences: ${preferences}
       
-      Format the response as a JSON object with:
-      - title (string): A catchy title for the workout plan
-      - description (string): A brief description of the workout plan
-      - exercises (array): An array of exercises, each with:
-        - name (string): Name of the exercise
-        - sets (number): Number of sets
-        - reps (number): Number of reps
-        - restTime (number): Rest time in seconds
-      
-      Keep it focused and achievable.`;
+      Respond with a JSON object in this exact format (no explanation, only the JSON):
+      {
+        "title": "Title of the workout plan",
+        "description": "Brief description of the workout plan",
+        "exercises": [
+          {
+            "name": "Exercise name",
+            "sets": number,
+            "reps": number,
+            "restTime": number
+          }
+        ]
+      }`;
 
+    console.log('Sending request to Gemini API...');
     const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent', {
       method: 'POST',
       headers: {
@@ -55,14 +59,44 @@ serve(async (req) => {
     });
 
     const data = await response.json();
-    const workoutPlan = JSON.parse(data.candidates[0].content.parts[0].text);
+    console.log('Gemini API response:', data);
+
+    if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      throw new Error('Invalid response from Gemini API');
+    }
+
+    let workoutPlan;
+    try {
+      const cleanedText = data.candidates[0].content.parts[0].text.trim();
+      workoutPlan = JSON.parse(cleanedText);
+    } catch (parseError) {
+      console.error('Error parsing Gemini response:', parseError);
+      throw new Error('Failed to parse workout plan from Gemini response');
+    }
+
+    // Validate the workout plan structure
+    if (!workoutPlan.title || !workoutPlan.description || !Array.isArray(workoutPlan.exercises)) {
+      throw new Error('Invalid workout plan structure');
+    }
+
+    // Ensure each exercise has the required properties
+    workoutPlan.exercises = workoutPlan.exercises.map(exercise => ({
+      name: exercise.name || 'Unnamed Exercise',
+      sets: parseInt(exercise.sets) || 3,
+      reps: parseInt(exercise.reps) || 10,
+      restTime: parseInt(exercise.restTime) || 60
+    }));
+
+    console.log('Generated workout plan:', workoutPlan);
 
     return new Response(JSON.stringify(workoutPlan), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Error generating workout:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Error in generate-workout function:', error);
+    return new Response(JSON.stringify({ 
+      error: error.message || 'Failed to generate workout plan'
+    }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
