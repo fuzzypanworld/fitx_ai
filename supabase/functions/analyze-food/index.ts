@@ -104,7 +104,7 @@ serve(async (req) => {
       totalNutrition.fat_total_g < 30;  // Moderate fat content
 
     const analysis = {
-      foods: [query],
+      foods: nutritionData.map((item: any) => item.name || query),
       calories: Math.round(totalNutrition.calories),
       protein: Math.round(totalNutrition.protein_g),
       carbs: Math.round(totalNutrition.carbohydrates_total_g),
