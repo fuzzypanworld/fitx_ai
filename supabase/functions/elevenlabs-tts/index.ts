@@ -7,6 +7,7 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -18,11 +19,13 @@ serve(async (req) => {
       throw new Error('Text is required')
     }
 
+    console.log('Generating speech for text:', text)
+
     const VOICE_ID = 'UgBBYS2sOqTuMpoF3BR0'
     const MODEL_ID = 'eleven_multilingual_v2'
 
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream`,
       {
         method: 'POST',
         headers: {
@@ -42,9 +45,9 @@ serve(async (req) => {
     )
 
     if (!response.ok) {
-      const error = await response.text()
-      console.error('ElevenLabs API error:', error)
-      throw new Error('Failed to generate speech')
+      const errorText = await response.text()
+      console.error('ElevenLabs API error:', errorText)
+      throw new Error(`Failed to generate speech: ${errorText}`)
     }
 
     // Convert audio buffer to base64
@@ -53,13 +56,21 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({ audioContent: base64Audio }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json',
+        } 
+      }
     )
 
   } catch (error) {
-    console.error('Error:', error)
+    console.error('Error in elevenlabs-tts:', error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message,
+        details: error.stack 
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

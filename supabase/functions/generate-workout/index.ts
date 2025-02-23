@@ -1,62 +1,98 @@
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3";
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { goal, level, age, frequency, preferences } = await req.json();
-
-    // Initialize Gemini
-    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') || '');
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
-    const prompt = `Create a detailed workout plan with the following parameters:
-      - Goal: ${goal}
-      - Experience Level: ${level}
-      - Age: ${age}
-      - Workout Frequency: ${frequency} times per week
-      - Additional Preferences: ${preferences}
-
-      Please provide:
-      1. A title for the workout plan
-      2. A detailed description
-      3. A list of exercises with sets, reps, and rest times
-      Format the response as a JSON object with title, description, and exercises array.
-      Each exercise should have: name, sets, reps, and restTime (in seconds).`;
-
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text();
+    const { goal, level, age, frequency, preferences } = await req.json()
     
-    // Parse the Gemini response to extract the JSON
-    const workoutPlan = JSON.parse(
-      text.substring(
-        text.indexOf('{'),
-        text.lastIndexOf('}') + 1
-      )
-    );
+    console.log('Generating workout with params:', { goal, level, age, frequency, preferences })
+
+    // Generate workout content using Gemini
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': Deno.env.get('GEMINI_API_KEY') || '',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: `Create a workout plan with these parameters:
+            - Goal: ${goal}
+            - Fitness Level: ${level}
+            - Age: ${age}
+            - Weekly Frequency: ${frequency} times per week
+            - Additional Preferences: ${preferences}
+            
+            Format the response as a JSON object with this structure:
+            {
+              "title": "Workout Title",
+              "description": "Brief description of the workout plan",
+              "exercises": [
+                {
+                  "name": "Exercise Name",
+                  "sets": number,
+                  "reps": number,
+                  "restTime": number (in seconds)
+                }
+              ]
+            }`
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 1024,
+        }
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to generate workout')
+    }
+
+    const result = await response.json()
+    const workoutText = result.candidates[0].content.parts[0].text
+
+    // Extract the JSON part from the response
+    const jsonMatch = workoutText.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('Failed to parse workout data')
+    }
+
+    const workoutData = JSON.parse(jsonMatch[0])
 
     return new Response(
-      JSON.stringify(workoutPlan),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
-  } catch (error) {
-    console.error('Error:', error);
-    return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify(workoutData),
       { 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json' 
+        } 
+      }
+    )
+
+  } catch (error) {
+    console.error('Error generating workout:', error)
+    return new Response(
+      JSON.stringify({ 
+        error: error.message,
+        details: error.stack 
+      }),
+      {
+        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400 
-      },
-    );
+      }
+    )
   }
-});
+})
