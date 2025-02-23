@@ -8,6 +8,7 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -26,21 +27,33 @@ serve(async (req) => {
       )
     }
 
-    // Fetch the image first to ensure it exists and is accessible
-    const imageResponse = await fetch(imageUrl)
-    if (!imageResponse.ok) {
-      throw new Error('Failed to fetch image')
+    // Check for Hugging Face API token
+    const hfToken = Deno.env.get('HUGGING_FACE_ACCESS_TOKEN')
+    if (!hfToken) {
+      console.error('Missing HUGGING_FACE_ACCESS_TOKEN')
+      return new Response(
+        JSON.stringify({ error: 'Missing API configuration' }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500
+        }
+      )
     }
-    const imageBlob = await imageResponse.blob()
 
-    const hf = new HfInference(Deno.env.get('HUGGING_FACE_ACCESS_TOKEN'))
+    // Initialize Hugging Face client
+    const hf = new HfInference(hfToken)
     console.log('Starting image analysis...')
 
-    // Use the blob directly instead of the URL
+    // Analyze the image directly from URL
     const result = await hf.imageToText({
       model: 'Salesforce/blip-image-captioning-base',
-      inputs: imageBlob,
+      inputs: imageUrl,
+      wait_for_model: true
     })
+
+    if (!result || !result.generated_text) {
+      throw new Error('Invalid response from image analysis')
+    }
 
     console.log('Raw analysis result:', result)
 
@@ -81,7 +94,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: 'Failed to analyze image',
-        details: error.message 
+        details: error.message,
+        stack: error.stack
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
