@@ -9,13 +9,21 @@ const corsHeaders = {
 
 // Food mappings for common items that API might not recognize
 const foodMappings: { [key: string]: string } = {
-  // Indian foods
+  // Indian breads and foods (with common misspellings and variations)
   'chapati': 'flatbread',
+  'chapatti': 'flatbread',
   'roti': 'flatbread',
+  'rote': 'flatbread',
+  'rotis': 'flatbread',
   'naan': 'flatbread',
+  'paratha': 'flatbread',
+  'parantha': 'flatbread',
   'dal': 'lentils',
   'daal': 'lentils',
-  'paratha': 'flatbread',
+  'dahl': 'lentils',
+  'curry': 'curry',
+  'sabzi': 'vegetable curry',
+  'sabji': 'vegetable curry',
   // Asian foods
   'noodles': 'chow mein noodles',
   'ramen': 'noodles',
@@ -24,8 +32,15 @@ const foodMappings: { [key: string]: string } = {
   // Common variations
   'burger': 'hamburger',
   'pizza slice': 'pizza',
-  'french fries': 'fries'
+  'french fries': 'fries',
+  'torres': 'flatbread', // Handle the misrecognition
+  'tortilla': 'flatbread'
 }
+
+// Keywords that might indicate Indian breads
+const indianBreadKeywords = [
+  'round', 'flat', 'bread', 'tortilla', 'torres', 'plate', 'brown', 'circular'
+]
 
 // Explicitly defined unhealthy foods
 const unhealthyFoods = new Set([
@@ -77,17 +92,27 @@ serve(async (req) => {
     const description = result.generated_text.toLowerCase()
     console.log('Food description:', description)
 
-    // Extract and map the main food item for API query
+    // Smart food type detection
     let mainFood = description
       .split(/,|\band\b/)[0]
       .trim()
       .replace(/^(a|an|the)\s+/, '')
 
-    // Check if we need to map this food to a recognized term
-    for (const [key, value] of Object.entries(foodMappings)) {
-      if (description.includes(key)) {
-        mainFood = value
-        break
+    // Check if the description matches Indian bread patterns
+    const hasIndianBreadIndicators = indianBreadKeywords.some(keyword => 
+      description.includes(keyword)
+    )
+
+    if (hasIndianBreadIndicators) {
+      console.log('Detected possible Indian bread from keywords')
+      mainFood = 'flatbread'
+    } else {
+      // Check normal food mappings
+      for (const [key, value] of Object.entries(foodMappings)) {
+        if (description.includes(key)) {
+          mainFood = value
+          break
+        }
       }
     }
 
@@ -121,9 +146,8 @@ serve(async (req) => {
 
     // Default values based on common serving sizes
     const defaultNutrition = {
-      chapati: { calories: 120, protein_g: 3, carbohydrates_total_g: 20, fat_total_g: 3 },
-      noodles: { calories: 220, protein_g: 7, carbohydrates_total_g: 43, fat_total_g: 2 },
-      flatbread: { calories: 130, protein_g: 3, carbohydrates_total_g: 23, fat_total_g: 3 }
+      flatbread: { calories: 120, protein_g: 3, carbohydrates_total_g: 20, fat_total_g: 3 },
+      noodles: { calories: 220, protein_g: 7, carbohydrates_total_g: 43, fat_total_g: 2 }
     }
 
     // Use API data or fallback to defaults
@@ -134,9 +158,23 @@ serve(async (req) => {
       fat_total_g: 8
     }
 
+    // Clean up the foods array and map any recognized terms
     const foods = description
       .split(/,|\band\b/)
-      .map(food => food.trim())
+      .map(food => {
+        const cleaned = food.trim()
+        // Check if this is an Indian bread by keywords
+        if (indianBreadKeywords.some(keyword => cleaned.includes(keyword))) {
+          return 'Indian flatbread'
+        }
+        // Return mapped food name if available
+        for (const [key, value] of Object.entries(foodMappings)) {
+          if (cleaned.includes(key)) {
+            return value
+          }
+        }
+        return cleaned
+      })
       .filter(food => food.length > 0)
 
     // More comprehensive health assessment
