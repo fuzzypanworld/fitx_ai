@@ -145,8 +145,8 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
 
   const startRecording = useCallback(async () => {
     try {
-      // Initialize WebSocket connection
-      wsRef.current = new WebSocket(`wss://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.functions.supabase.co/voice-chat`);
+      // Initialize WebSocket connection with correct URL format
+      wsRef.current = new WebSocket(`wss://olcnfmrixglengxpiexf.supabase.co/functions/v1/voice-chat`);
       
       wsRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
