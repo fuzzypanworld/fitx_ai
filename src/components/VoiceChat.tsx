@@ -3,6 +3,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Mic, X } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface VoiceChatProps {
   onClose: () => void;
@@ -17,7 +18,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceRef = useRef<MediaStreamSource | null>(null);
+  const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -46,6 +47,20 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
     }
   };
 
+  const getAIResponse = async (message: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('chat-ai', {
+        body: { message },
+      });
+
+      if (error) throw error;
+      return data.response;
+    } catch (error) {
+      console.error('Error getting AI response:', error);
+      return "I'm sorry, I couldn't process that request. Please try again.";
+    }
+  };
+
   const startRecording = useCallback(async () => {
     try {
       if (!recognitionRef.current) {
@@ -57,12 +72,12 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       audioContextRef.current = new AudioContext();
       analyserRef.current = audioContextRef.current.createAnalyser();
       analyserRef.current.fftSize = 256;
-      sourceRef.current = audioContextRef.current.createMediaStreamSource(streamRef.current);
-      sourceRef.current.connect(analyserRef.current);
+      mediaSourceRef.current = audioContextRef.current.createMediaStreamSource(streamRef.current);
+      mediaSourceRef.current.connect(analyserRef.current);
       animationFrameRef.current = requestAnimationFrame(updateAmplitude);
 
       // Start speech recognition
-      recognitionRef.current.onresult = (event) => {
+      recognitionRef.current.onresult = async (event) => {
         const transcript = Array.from(event.results)
           .map(result => result[0].transcript)
           .join('');
@@ -70,8 +85,8 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         setLastTranscript(transcript);
         
         if (event.results[event.results.length - 1].isFinal) {
-          // Process final result with AI response
-          const response = "I understand what you're saying. How can I help you further?";
+          // Get AI response
+          const response = await getAIResponse(transcript);
           
           // Speak the response
           if (synthRef.current) {
