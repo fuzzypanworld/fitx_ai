@@ -1,6 +1,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { Dumbbell, Heart, SmilePlus } from "lucide-react";
 
 const Index = () => {
   return (
@@ -43,15 +44,24 @@ const Index = () => {
 
           <div className="mx-auto mt-16 max-w-2xl sm:mt-20 lg:mt-24 lg:max-w-none">
             <div className="grid max-w-xl grid-cols-1 gap-x-8 gap-y-16 lg:max-w-none lg:grid-cols-3">
-              <div className="flex flex-col">
+              <div className="flex flex-col items-center text-center">
+                <div className="mb-6 rounded-full bg-primary/10 p-3">
+                  <Dumbbell className="h-6 w-6 text-primary" />
+                </div>
                 <h3 className="text-xl font-semibold">Workout Tracking</h3>
                 <p className="mt-4 text-muted-foreground">Generate personalized workout plans and track your progress</p>
               </div>
-              <div className="flex flex-col">
+              <div className="flex flex-col items-center text-center">
+                <div className="mb-6 rounded-full bg-primary/10 p-3">
+                  <Heart className="h-6 w-6 text-primary" />
+                </div>
                 <h3 className="text-xl font-semibold">Food Analysis</h3>
                 <p className="mt-4 text-muted-foreground">Analyze your meals with AI and get detailed nutritional insights</p>
               </div>
-              <div className="flex flex-col">
+              <div className="flex flex-col items-center text-center">
+                <div className="mb-6 rounded-full bg-primary/10 p-3">
+                  <SmilePlus className="h-6 w-6 text-primary" />
+                </div>
                 <h3 className="text-xl font-semibold">Meditation & Wellness</h3>
                 <p className="mt-4 text-muted-foreground">Access guided meditation sessions and wellness features</p>
               </div>
