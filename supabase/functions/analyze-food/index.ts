@@ -8,7 +8,6 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -27,24 +26,18 @@ serve(async (req) => {
       )
     }
 
-    // Check for Hugging Face API token
+    // First get the image description using Hugging Face
     const hfToken = Deno.env.get('HUGGING_FACE_ACCESS_TOKEN')
     if (!hfToken) {
-      console.error('Missing HUGGING_FACE_ACCESS_TOKEN')
       return new Response(
-        JSON.stringify({ error: 'Missing API configuration' }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500
-        }
+        JSON.stringify({ error: 'Missing Hugging Face API configuration' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
       )
     }
 
-    // Initialize Hugging Face client
     const hf = new HfInference(hfToken)
     console.log('Starting image analysis...')
 
-    // Analyze the image directly from URL
     const result = await hf.imageToText({
       model: 'Salesforce/blip-image-captioning-base',
       inputs: imageUrl,
@@ -55,32 +48,77 @@ serve(async (req) => {
       throw new Error('Invalid response from image analysis')
     }
 
-    console.log('Raw analysis result:', result)
-
     const description = result.generated_text.toLowerCase()
-    console.log('Processed description:', description)
+    console.log('Food description:', description)
 
-    // Analyze the content
-    const isHealthy = /salad|vegetable|fruit|healthy|lean|fish|grilled/.test(description)
-    const unhealthyMatch = /pizza|burger|fries|fried|processed|candy|cake|dessert/.test(description)
+    // Extract the main food item for API query
+    const mainFood = description
+      .split(/,|\band\b/)[0]
+      .trim()
+      .replace(/^(a|an|the)\s+/, '')
+
+    console.log('Querying nutrition for:', mainFood)
+
+    // Get nutritional info from API Ninjas
+    const apiKey = Deno.env.get('API_NINJAS_KEY')
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({ error: 'Missing API Ninjas configuration' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+      )
+    }
+
+    const nutritionResponse = await fetch(
+      `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(mainFood)}`, 
+      {
+        headers: {
+          'X-Api-Key': apiKey,
+          'Content-Type': 'application/json'
+        }
+      }
+    )
+
+    if (!nutritionResponse.ok) {
+      throw new Error('Failed to fetch nutrition data')
+    }
+
+    const nutritionData = await nutritionResponse.json()
+    console.log('Nutrition data:', nutritionData)
+
+    // In case no nutrition data is found, provide default values
+    const nutrition = nutritionData[0] || {
+      calories: 0,
+      protein_g: 0,
+      carbohydrates_total_g: 0,
+      fat_total_g: 0
+    }
 
     const foods = description
       .split(/,|\band\b/)
       .map(food => food.trim())
       .filter(food => food.length > 0)
 
+    // Determine if food is healthy based on nutritional values
+    const isHealthy = (
+      nutrition.protein_g > 10 || // Good protein content
+      (nutrition.calories < 400 && nutrition.fat_total_g < 15) || // Low calorie and fat
+      /salad|vegetable|fruit|lean|fish|grilled/.test(description) // Healthy keywords
+    )
+
+    const unhealthyMatch = /pizza|burger|fries|fried|processed|candy|cake|dessert/.test(description)
+
     const analysis = {
       foods,
-      calories: isHealthy ? 300 : 600,
-      protein: isHealthy ? 15 : 20,
-      carbs: isHealthy ? 30 : 50,
-      fat: isHealthy ? 10 : 25,
+      calories: Math.round(nutrition.calories),
+      protein: Math.round(nutrition.protein_g),
+      carbs: Math.round(nutrition.carbohydrates_total_g),
+      fat: Math.round(nutrition.fat_total_g),
       isHealthy,
       explanation: isHealthy 
-        ? "This looks like a healthy, nutritious meal! Great choice for maintaining a balanced diet."
-        : "While this food might be tasty, there are healthier alternatives available.",
+        ? "This looks like a healthy, nutritious meal! The nutritional values show a good balance of nutrients."
+        : "While this food might be tasty, the nutritional analysis suggests there might be healthier alternatives available.",
       healthyAlternative: unhealthyMatch 
-        ? "Consider trying a fresh salad with grilled chicken or fish for a more nutritious option."
+        ? "Consider trying a fresh salad with grilled chicken or fish for a more nutritious option with better protein content and fewer calories."
         : undefined
     }
 
