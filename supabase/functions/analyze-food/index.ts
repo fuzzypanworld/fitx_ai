@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { HfInference } from 'https://esm.sh/@huggingface/inference@2.3.2'
 
@@ -204,29 +205,34 @@ serve(async (req) => {
     }
 
     for (const food of detectedFoods) {
-      let nutritionForFood = null
+      let nutritionForFood = null;
+      console.log(`Processing food item: ${food}`);
 
       // Check if it's a bread item
       if (indianBreadKeywords.some(keyword => food.includes(keyword))) {
-        nutritionForFood = defaultNutritionValues['indian flatbread']
+        nutritionForFood = defaultNutritionValues['indian flatbread'];
+        console.log('Detected as Indian flatbread, using default values');
       } else {
         // Check food mappings
         for (const [key, value] of Object.entries(foodMappings)) {
           if (food.includes(key)) {
-            nutritionForFood = defaultNutritionValues[value as keyof typeof defaultNutritionValues]
-            break
+            nutritionForFood = defaultNutritionValues[value as keyof typeof defaultNutritionValues];
+            console.log(`Found mapping for ${key} -> ${value}, using default values`);
+            break;
           }
         }
       }
 
-      // If no mapping found, try API
+      // If no mapping found, try API Ninjas
       if (!nutritionForFood) {
         try {
-          const apiKey = Deno.env.get('API_NINJAS_KEY')
+          const apiKey = Deno.env.get('API_NINJAS_KEY');
           if (!apiKey) {
-            throw new Error('Missing API Ninjas configuration')
+            console.error('Missing API Ninjas key');
+            throw new Error('Missing API Ninjas configuration');
           }
 
+          console.log(`Making API Ninjas request for: ${food}`);
           const nutritionResponse = await fetch(
             `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(food)}`, 
             {
@@ -235,25 +241,37 @@ serve(async (req) => {
                 'Content-Type': 'application/json'
               }
             }
-          )
+          );
 
-          if (nutritionResponse.ok) {
-            const data = await nutritionResponse.json()
-            if (data && data[0]) {
-              nutritionForFood = data[0]
-            }
+          if (!nutritionResponse.ok) {
+            const errorText = await nutritionResponse.text();
+            console.error(`API Ninjas error (${nutritionResponse.status}):`, errorText);
+            throw new Error(`API Ninjas request failed: ${nutritionResponse.status} ${errorText}`);
+          }
+
+          const data = await nutritionResponse.json();
+          console.log('API Ninjas response:', data);
+
+          if (data && data[0]) {
+            nutritionForFood = data[0];
+            console.log('Successfully got nutrition data from API Ninjas');
+          } else {
+            console.log('No nutrition data found from API Ninjas, will use defaults if available');
           }
         } catch (error) {
-          console.error('Error fetching nutrition data for', food, error)
+          console.error('Error fetching nutrition data from API Ninjas:', error);
         }
       }
 
       // Add nutrition values to total
       if (nutritionForFood) {
-        totalNutrition.calories += nutritionForFood.calories
-        totalNutrition.protein_g += nutritionForFood.protein_g
-        totalNutrition.carbohydrates_total_g += nutritionForFood.carbohydrates_total_g
-        totalNutrition.fat_total_g += nutritionForFood.fat_total_g
+        totalNutrition.calories += nutritionForFood.calories;
+        totalNutrition.protein_g += nutritionForFood.protein_g;
+        totalNutrition.carbohydrates_total_g += nutritionForFood.carbohydrates_total_g;
+        totalNutrition.fat_total_g += nutritionForFood.fat_total_g;
+        console.log(`Added nutrition values for ${food}:`, nutritionForFood);
+      } else {
+        console.log(`No nutrition data found for ${food}, skipping`);
       }
     }
 
