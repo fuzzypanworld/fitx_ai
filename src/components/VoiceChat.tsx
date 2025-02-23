@@ -14,86 +14,109 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const { user } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Initialize audio element
     audioRef.current = new Audio();
-
-    // Initialize speech recognition
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
-      const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognitionAPI();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
-
-      recognitionRef.current.onstart = () => {
-        console.log('Started listening');
-        setIsRecording(true);
-      };
-
-      recognitionRef.current.onend = () => {
-        console.log('Stopped listening');
-        setIsRecording(false);
-      };
-
-      recognitionRef.current.onresult = async (event) => {
-        const transcript = event.results[0][0].transcript;
-        console.log('Heard:', transcript);
-        await processText(transcript);
-      };
-
-      recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        toast({
-          title: "Error",
-          description: "Speech recognition failed. Please try again.",
-          variant: "destructive",
-        });
-        setIsRecording(false);
-      };
-    }
-
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-      }
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
       }
+      stopRecording();
     };
-  }, [toast]);
+  }, []);
 
-  const startRecording = () => {
-    if (recognitionRef.current && !isRecording && !isProcessing) {
-      recognitionRef.current.start();
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        await processAudioData(audioBlob);
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      toast({
+        title: "Error",
+        description: "Could not start recording. Please check your microphone permissions.",
+        variant: "destructive",
+      });
     }
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      setIsRecording(false);
     }
   };
 
-  const processText = async (text: string) => {
+  const processAudioData = async (audioBlob: Blob) => {
     try {
       setIsProcessing(true);
       
-      // First, get AI response
-      const { data: voiceData, error: voiceError } = await supabase.functions.invoke('voice-chat', {
-        body: { text, userName: user?.name }
+      // Convert audio blob to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onloadend = () => {
+          const base64Audio = reader.result as string;
+          resolve(base64Audio.split(',')[1]); // Remove data URL prefix
+        };
       });
+      reader.readAsDataURL(audioBlob);
+      const base64Audio = await base64Promise;
+
+      // First get transcription using Deepgram
+      const { data: transcriptionData, error: transcriptionError } = await supabase.functions.invoke(
+        'voice-chat',
+        {
+          body: { audio: base64Audio, type: 'transcribe' }
+        }
+      );
+
+      if (transcriptionError) throw transcriptionError;
+
+      if (!transcriptionData?.text) {
+        throw new Error('No transcription received');
+      }
+
+      // Get AI response
+      const { data: voiceData, error: voiceError } = await supabase.functions.invoke(
+        'voice-chat',
+        {
+          body: { 
+            text: transcriptionData.text, 
+            userName: user?.name,
+            type: 'chat'
+          }
+        }
+      );
 
       if (voiceError) throw voiceError;
 
-      // Then convert response to speech
-      const { data: speechData, error: speechError } = await supabase.functions.invoke('text-to-speech', {
-        body: { text: voiceData.responseText }
-      });
+      // Convert response to speech
+      const { data: speechData, error: speechError } = await supabase.functions.invoke(
+        'text-to-speech',
+        {
+          body: { text: voiceData.responseText }
+        }
+      );
 
       if (speechError) throw speechError;
 
@@ -120,7 +143,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
 
       toast({
         title: "You said:",
-        description: text,
+        description: transcriptionData.text,
       });
     } catch (error) {
       console.error('Error processing voice chat:', error);
