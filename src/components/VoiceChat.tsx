@@ -88,9 +88,28 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
           // Get AI response
           const response = await getAIResponse(transcript);
           
-          // Speak the response
+          // Speak the response with calm voice settings
           if (synthRef.current) {
             const utterance = new SpeechSynthesisUtterance(response);
+            
+            // Set voice properties for a calming effect
+            utterance.volume = 0.8; // Slightly softer volume
+            utterance.rate = 0.9; // Slightly slower rate
+            utterance.pitch = 0.9; // Slightly lower pitch
+
+            // Try to use a female voice if available (usually sounds calmer)
+            const voices = synthRef.current.getVoices();
+            const femaleVoice = voices.find(voice => 
+              voice.name.includes('Female') || 
+              voice.name.includes('Samantha') || 
+              voice.name.includes('Karen') ||
+              voice.name.includes('Victoria')
+            );
+            
+            if (femaleVoice) {
+              utterance.voice = femaleVoice;
+            }
+
             synthRef.current.speak(utterance);
           }
 
