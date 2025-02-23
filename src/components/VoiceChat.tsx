@@ -76,9 +76,17 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const [lastTranscript, setLastTranscript] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
-  const audioQueueRef = useRef<Uint8Array[]>([]);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const isPlayingRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    audioRef.current = new Audio();
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
 
   const stopRecording = useCallback(() => {
     if (audioRecorderRef.current) {
@@ -123,46 +131,10 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
     }
   }, []);
 
-  const playAudioChunk = async (audioData: Uint8Array) => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext();
-    }
-
-    try {
-      const audioBuffer = await audioContextRef.current.decodeAudioData(audioData.buffer);
-      const source = audioContextRef.current.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContextRef.current.destination);
-      
-      source.onended = () => {
-        isPlayingRef.current = false;
-        playNextChunk();
-      };
-      
-      source.start(0);
-      isPlayingRef.current = true;
-    } catch (error) {
-      console.error('Error playing audio chunk:', error);
-      isPlayingRef.current = false;
-      playNextChunk();
-    }
-  };
-
-  const playNextChunk = () => {
-    if (audioQueueRef.current.length > 0 && !isPlayingRef.current) {
-      const nextChunk = audioQueueRef.current.shift();
-      if (nextChunk) {
-        playAudioChunk(nextChunk);
-      }
-    }
-  };
-
   const startRecording = useCallback(async () => {
     try {
-      // Initialize WebSocket connection with correct URL format
       wsRef.current = new WebSocket(`wss://olcnfmrixglengxpiexf.supabase.co/functions/v1/voice-chat`);
       
-      // Add connection timeout
       const connectionTimeout = setTimeout(() => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) {
           toast({
@@ -201,7 +173,6 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
             description: "Voice chat connection was lost. Reconnecting...",
             variant: "destructive",
           });
-          // Attempt to reconnect
           setTimeout(startRecording, 1000);
         }
       };
@@ -216,7 +187,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         stopRecording();
       };
 
-      wsRef.current.onmessage = (event) => {
+      wsRef.current.onmessage = async (event) => {
         try {
           const data = JSON.parse(event.data);
           
@@ -227,6 +198,11 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
               title: "Assistant",
               description: data.text,
             });
+          } else if (data.type === 'audio') {
+            if (audioRef.current && data.audio) {
+              audioRef.current.src = `data:audio/mp3;base64,${data.audio}`;
+              await audioRef.current.play();
+            }
           } else if (data.type === 'error') {
             console.error('Server error:', data.message);
             toast({
@@ -250,15 +226,9 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   }, [handleAudioData, toast, stopRecording, isActive]);
 
   useEffect(() => {
-    // Start recording automatically when component mounts
     startRecording();
-    
     return () => {
       stopRecording();
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
-      }
     };
   }, [startRecording, stopRecording]);
 
