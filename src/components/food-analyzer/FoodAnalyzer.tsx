@@ -307,5 +307,3 @@ export const FoodAnalyzer = () => {
     </>
   )
 }
-
-// Add the component to config.toml
