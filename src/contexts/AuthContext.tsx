@@ -33,12 +33,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
+        // First, check for an existing session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+
         if (session?.user) {
           await updateUserProfile(session.user);
         }
 
+        // Then, set up the auth state listener
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
           console.log("Auth state changed:", event, session?.user?.id);
           
@@ -46,7 +49,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             await updateUserProfile(session.user);
           } else {
             setUser(null);
-            navigate('/auth');
+            // Only navigate to /auth if we're not already there and we're not on the landing page
+            if (window.location.pathname !== '/auth' && window.location.pathname !== '/') {
+              navigate('/auth');
+            }
           }
         });
 
@@ -73,12 +79,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('id', authUser.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found" error
+      if (error && error.code !== 'PGRST116') {
         console.error('Error fetching user profile:', error);
         return;
       }
 
-      // Create a user profile with all required fields
       const userProfile: UserProfile = {
         id: authUser.id,
         email: authUser.email!,
@@ -91,7 +96,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(userProfile);
       
-      if (window.location.pathname === '/auth') {
+      // Don't redirect if we're already on a valid authenticated route
+      if (window.location.pathname === '/auth' || window.location.pathname === '/') {
         navigate('/dashboard');
       }
     } catch (error) {

@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -148,50 +147,92 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       // Initialize WebSocket connection with correct URL format
       wsRef.current = new WebSocket(`wss://olcnfmrixglengxpiexf.supabase.co/functions/v1/voice-chat`);
       
-      wsRef.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        if (data.type === 'transcript') {
-          setLastTranscript(data.text);
-        } else if (data.type === 'response') {
+      // Add connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (wsRef.current?.readyState !== WebSocket.OPEN) {
           toast({
-            title: "Assistant",
-            description: data.text,
-          });
-        } else if (data.type === 'error') {
-          toast({
-            title: "Error",
-            description: data.message,
+            title: "Connection Timeout",
+            description: "Could not establish connection. Please try again.",
             variant: "destructive",
           });
+          stopRecording();
+        }
+      }, 5000);
+
+      wsRef.current.onopen = async () => {
+        clearTimeout(connectionTimeout);
+        console.log("WebSocket connection established");
+        
+        try {
+          audioRecorderRef.current = new AudioRecorder(handleAudioData);
+          await audioRecorderRef.current.start();
+          setIsActive(true);
+        } catch (micError) {
+          console.error('Microphone access error:', micError);
+          toast({
+            title: "Microphone Error",
+            description: "Please ensure microphone access is granted and try again.",
+            variant: "destructive",
+          });
+          stopRecording();
         }
       };
 
-      wsRef.current.onopen = async () => {
-        // Start recording once WebSocket is connected
-        audioRecorderRef.current = new AudioRecorder(handleAudioData);
-        await audioRecorderRef.current.start();
-        setIsActive(true);
+      wsRef.current.onclose = (event) => {
+        console.log("WebSocket connection closed:", event.code, event.reason);
+        if (isActive) {
+          toast({
+            title: "Connection Lost",
+            description: "Voice chat connection was lost. Reconnecting...",
+            variant: "destructive",
+          });
+          // Attempt to reconnect
+          setTimeout(startRecording, 1000);
+        }
       };
 
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error);
         toast({
-          title: "Error",
-          description: "Connection error. Please try again.",
+          title: "Connection Error",
+          description: "Voice chat encountered an error. Please try again.",
           variant: "destructive",
         });
         stopRecording();
+      };
+
+      wsRef.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'transcript') {
+            setLastTranscript(data.text);
+          } else if (data.type === 'response') {
+            toast({
+              title: "Assistant",
+              description: data.text,
+            });
+          } else if (data.type === 'error') {
+            console.error('Server error:', data.message);
+            toast({
+              title: "Error",
+              description: data.message,
+              variant: "destructive",
+            });
+          }
+        } catch (parseError) {
+          console.error('Error parsing WebSocket message:', parseError);
+        }
       };
     } catch (error) {
       console.error('Error starting voice chat:', error);
       toast({
         title: "Error",
-        description: "Could not start voice chat. Please check your microphone permissions.",
+        description: "Could not start voice chat. Please try again.",
         variant: "destructive",
       });
     }
-  }, [handleAudioData, toast]);
+  }, [handleAudioData, toast, stopRecording, isActive]);
 
   const stopRecording = useCallback(() => {
     if (audioRecorderRef.current) {
