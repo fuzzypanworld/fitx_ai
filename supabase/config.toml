@@ -1,6 +1,9 @@
 
 project_id = "olcnfmrixglengxpiexf"
 
+[functions.analyze-food]
+verify_jwt = false
+
 [functions.generate-workout]
 verify_jwt = true
 
