@@ -1,161 +1,224 @@
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Mic, X } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface VoiceChatProps {
   onClose: () => void;
 }
 
+class AudioRecorder {
+  private stream: MediaStream | null = null;
+  private audioContext: AudioContext | null = null;
+  private processor: ScriptProcessorNode | null = null;
+  private source: MediaStreamAudioSourceNode | null = null;
+
+  constructor(private onAudioData: (audioData: Float32Array) => void) {}
+
+  async start() {
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 24000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      
+      this.audioContext = new AudioContext({
+        sampleRate: 24000,
+      });
+      
+      this.source = this.audioContext.createMediaStreamSource(this.stream);
+      this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+      
+      this.processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        this.onAudioData(new Float32Array(inputData));
+      };
+      
+      this.source.connect(this.processor);
+      this.processor.connect(this.audioContext.destination);
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      throw error;
+    }
+  }
+
+  stop() {
+    if (this.source) {
+      this.source.disconnect();
+      this.source = null;
+    }
+    if (this.processor) {
+      this.processor.disconnect();
+      this.processor = null;
+    }
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
+    }
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
+    }
+  }
+}
+
 const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const { user } = useAuth();
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const { toast } = useToast();
+  const [isActive, setIsActive] = useState(false);
+  const [lastTranscript, setLastTranscript] = useState('');
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioRecorderRef = useRef<AudioRecorder | null>(null);
+  const audioQueueRef = useRef<Uint8Array[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const isPlayingRef = useRef(false);
 
-  useEffect(() => {
-    audioRef.current = new Audio();
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
+  const encodeAudioData = (float32Array: Float32Array): string => {
+    const int16Array = new Int16Array(float32Array.length);
+    for (let i = 0; i < float32Array.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    
+    const uint8Array = new Uint8Array(int16Array.buffer);
+    let binary = '';
+    const chunkSize = 0x8000;
+    
+    for (let i = 0; i < uint8Array.length; i += chunkSize) {
+      const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    
+    return btoa(binary);
+  };
+
+  const playAudioChunk = async (audioData: Uint8Array) => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext();
+    }
+
+    try {
+      const audioBuffer = await audioContextRef.current.decodeAudioData(audioData.buffer);
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContextRef.current.destination);
+      
+      source.onended = () => {
+        isPlayingRef.current = false;
+        playNextChunk();
+      };
+      
+      source.start(0);
+      isPlayingRef.current = true;
+    } catch (error) {
+      console.error('Error playing audio chunk:', error);
+      isPlayingRef.current = false;
+      playNextChunk();
+    }
+  };
+
+  const playNextChunk = () => {
+    if (audioQueueRef.current.length > 0 && !isPlayingRef.current) {
+      const nextChunk = audioQueueRef.current.shift();
+      if (nextChunk) {
+        playAudioChunk(nextChunk);
       }
-      stopRecording();
-    };
+    }
+  };
+
+  const handleAudioData = useCallback((audioData: Float32Array) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const encoded = encodeAudioData(audioData);
+      wsRef.current.send(JSON.stringify({
+        type: 'audio',
+        audio: encoded
+      }));
+    }
   }, []);
 
-  const startRecording = async () => {
+  const startRecording = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        await processAudioData(audioBlob);
-      };
-
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-    } catch (error) {
-      console.error('Error starting recording:', error);
-      toast({
-        title: "Error",
-        description: "Could not start recording. Please check your microphone permissions.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      setIsRecording(false);
-    }
-  };
-
-  const processAudioData = async (audioBlob: Blob) => {
-    try {
-      setIsProcessing(true);
+      // Initialize WebSocket connection
+      wsRef.current = new WebSocket(`wss://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.functions.supabase.co/voice-chat`);
       
-      // Convert audio blob to base64
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onloadend = () => {
-          const base64Audio = reader.result as string;
-          resolve(base64Audio.split(',')[1]); // Remove data URL prefix
-        };
-      });
-      reader.readAsDataURL(audioBlob);
-      const base64Audio = await base64Promise;
-
-      // First get transcription using Deepgram
-      const { data: transcriptionData, error: transcriptionError } = await supabase.functions.invoke(
-        'voice-chat',
-        {
-          body: { audio: base64Audio, type: 'transcribe' }
-        }
-      );
-
-      if (transcriptionError) throw transcriptionError;
-
-      if (!transcriptionData?.text) {
-        throw new Error('No transcription received');
-      }
-
-      // Get AI response
-      const { data: voiceData, error: voiceError } = await supabase.functions.invoke(
-        'voice-chat',
-        {
-          body: { 
-            text: transcriptionData.text, 
-            userName: user?.name,
-            type: 'chat'
-          }
-        }
-      );
-
-      if (voiceError) throw voiceError;
-
-      // Convert response to speech
-      const { data: speechData, error: speechError } = await supabase.functions.invoke(
-        'text-to-speech',
-        {
-          body: { text: voiceData.responseText }
-        }
-      );
-
-      if (speechError) throw speechError;
-
-      if (!speechData?.audioContent) {
-        throw new Error('No audio content received');
-      }
-
-      // Play the audio response
-      if (audioRef.current) {
-        audioRef.current.src = `data:audio/mp3;base64,${speechData.audioContent}`;
-        audioRef.current.onerror = (e) => {
-          console.error('Audio error:', e);
-          throw new Error('Failed to play audio');
-        };
+      wsRef.current.onmessage = (event) => {
+        const data = JSON.parse(event.data);
         
-        try {
-          await audioRef.current.play();
-          console.log('Audio started playing');
-        } catch (playError) {
-          console.error('Error playing audio:', playError);
-          throw playError;
+        if (data.type === 'transcript') {
+          setLastTranscript(data.text);
+        } else if (data.type === 'response') {
+          toast({
+            title: "Assistant",
+            description: data.text,
+          });
+        } else if (data.type === 'error') {
+          toast({
+            title: "Error",
+            description: data.message,
+            variant: "destructive",
+          });
         }
-      }
+      };
 
-      toast({
-        title: "You said:",
-        description: transcriptionData.text,
-      });
+      wsRef.current.onopen = async () => {
+        // Start recording once WebSocket is connected
+        audioRecorderRef.current = new AudioRecorder(handleAudioData);
+        await audioRecorderRef.current.start();
+        setIsActive(true);
+      };
+
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        toast({
+          title: "Error",
+          description: "Connection error. Please try again.",
+          variant: "destructive",
+        });
+        stopRecording();
+      };
     } catch (error) {
-      console.error('Error processing voice chat:', error);
+      console.error('Error starting voice chat:', error);
       toast({
         title: "Error",
-        description: "Failed to process your message. Please try again.",
+        description: "Could not start voice chat. Please check your microphone permissions.",
         variant: "destructive",
       });
-    } finally {
-      setIsProcessing(false);
     }
-  };
+  }, [handleAudioData, toast]);
+
+  const stopRecording = useCallback(() => {
+    if (audioRecorderRef.current) {
+      audioRecorderRef.current.stop();
+      audioRecorderRef.current = null;
+    }
+    
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    
+    setIsActive(false);
+  }, []);
+
+  useEffect(() => {
+    // Start recording automatically when component mounts
+    startRecording();
+    
+    return () => {
+      stopRecording();
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+    };
+  }, [startRecording, stopRecording]);
 
   return (
     <div className="fixed inset-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-50 flex flex-col items-center justify-center">
@@ -172,43 +235,19 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         <div className="absolute inset-0 rounded-full bg-blue-500/20" />
         <div 
           className={`absolute inset-2 rounded-full bg-gradient-to-b from-blue-400 to-blue-600 transition-transform ${
-            isRecording ? 'scale-110' : ''
+            isActive ? 'scale-110' : ''
           }`}
           style={{
-            transform: isRecording ? `scale(${1 + Math.sin(Date.now() / 500) * 0.1})` : 'scale(1)',
+            transform: isActive ? `scale(${1 + Math.sin(Date.now() / 500) * 0.1})` : 'scale(1)',
           }}
         />
       </div>
 
-      <div className="flex gap-4">
-        {isRecording ? (
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={stopRecording}
-            className="rounded-full w-14 h-14 p-0"
-          >
-            <X className="h-6 w-6" />
-          </Button>
-        ) : (
-          <Button
-            size="lg"
-            onClick={startRecording}
-            disabled={isProcessing}
-            className="rounded-full w-14 h-14 p-0 bg-blue-500 hover:bg-blue-600"
-          >
-            <Mic className="h-6 w-6" />
-          </Button>
-        )}
-      </div>
-
       <div className="mt-4 text-sm text-muted-foreground">
-        {isProcessing ? (
-          <span className="animate-pulse">Processing your message...</span>
-        ) : isRecording ? (
-          <span>Listening...</span>
+        {isActive ? (
+          <span>{lastTranscript || "Listening..."}</span>
         ) : (
-          <span>Click the mic to start</span>
+          <span>Connecting...</span>
         )}
       </div>
     </div>
