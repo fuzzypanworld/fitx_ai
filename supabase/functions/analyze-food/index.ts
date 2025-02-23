@@ -8,6 +8,8 @@ const corsHeaders = {
 
 // Common exercise recommendations based on calories
 function getExerciseRecommendations(calories: number) {
+  if (!calories || isNaN(calories)) return [];
+  
   return [
     {
       name: "Running",
@@ -86,10 +88,10 @@ serve(async (req) => {
 
     // Calculate total nutrition values
     const totalNutrition = nutritionData.reduce((acc: any, item: any) => ({
-      calories: acc.calories + item.calories,
-      protein_g: acc.protein_g + item.protein_g,
-      carbohydrates_total_g: acc.carbohydrates_total_g + item.carbohydrates_total_g,
-      fat_total_g: acc.fat_total_g + item.fat_total_g
+      calories: (acc.calories || 0) + (item.calories || 0),
+      protein_g: (acc.protein_g || 0) + (item.protein_g || 0),
+      carbohydrates_total_g: (acc.carbohydrates_total_g || 0) + (item.carbohydrates_total_g || 0),
+      fat_total_g: (acc.fat_total_g || 0) + (item.fat_total_g || 0)
     }), {
       calories: 0,
       protein_g: 0,
@@ -97,22 +99,28 @@ serve(async (req) => {
       fat_total_g: 0
     })
 
+    // Ensure we have valid numbers
+    const calories = Math.round(totalNutrition.calories) || 0
+    const protein = Math.round(totalNutrition.protein_g) || 0
+    const carbs = Math.round(totalNutrition.carbohydrates_total_g) || 0
+    const fat = Math.round(totalNutrition.fat_total_g) || 0
+
     // Basic health assessment
     const isHealthy = 
-      totalNutrition.calories <= 800 && // Not too caloric
-      totalNutrition.protein_g >= 15 && // Good protein content
-      totalNutrition.fat_total_g < 30;  // Moderate fat content
+      calories <= 800 && // Not too caloric
+      protein >= 15 && // Good protein content
+      fat < 30;  // Moderate fat content
 
     const analysis = {
       foods: nutritionData.map((item: any) => item.name || query),
-      calories: Math.round(totalNutrition.calories),
-      protein: Math.round(totalNutrition.protein_g),
-      carbs: Math.round(totalNutrition.carbohydrates_total_g),
-      fat: Math.round(totalNutrition.fat_total_g),
+      calories,
+      protein,
+      carbs,
+      fat,
       isHealthy,
-      explanation: `This meal contains ${Math.round(totalNutrition.calories)} calories with ${Math.round(totalNutrition.protein_g)}g of protein, ${Math.round(totalNutrition.carbohydrates_total_g)}g of carbs, and ${Math.round(totalNutrition.fat_total_g)}g of fat.`,
+      explanation: `This meal contains ${calories} calories with ${protein}g of protein, ${carbs}g of carbs, and ${fat}g of fat.`,
       healthyAlternative: isHealthy ? undefined : "Consider a leaner option with more protein and less fat, such as grilled chicken with vegetables.",
-      exerciseRecommendations: getExerciseRecommendations(totalNutrition.calories)
+      exerciseRecommendations: getExerciseRecommendations(calories)
     }
 
     console.log('Final analysis:', analysis)
