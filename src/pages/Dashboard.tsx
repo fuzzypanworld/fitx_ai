@@ -14,7 +14,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { MeditationDialog } from "@/components/meditation/MeditationDialog";
 import { FoodAnalyzer } from "@/components/food-analyzer/FoodAnalyzer";
-import { CalorieTracker } from "@/components/calorie-tracker/CalorieTracker";
 
 interface WorkoutData {
   title: string;
@@ -287,11 +286,6 @@ export default function Dashboard() {
               onGenerateMusic={generateMusic}
               onMeditate={handleMeditate}
             />
-          </div>
-          
-          <div className="mt-8">
-            <h2 className="text-2xl font-bold mb-4">Calorie Tracking</h2>
-            <CalorieTracker />
           </div>
           
           <div className="mt-8">
