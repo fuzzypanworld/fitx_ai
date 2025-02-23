@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 const corsHeaders = {
@@ -5,19 +6,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const VOICE_ID = 'IKne3meq5aSn9XLyUdCD'
-const MODEL_ID = 'eleven_multilingual_v2'
+// Using the specified voice ID
+const VOICE_ID = 'UgBBYS2sOqTuMpoF3BR0'
+const MODEL_ID = 'eleven_monolingual_v1'
 
 serve(async (req) => {
-  const upgradeHeader = req.headers.get("Upgrade")
-  if (!upgradeHeader || upgradeHeader !== "websocket") {
-    return new Response(
-      JSON.stringify({ error: "Expected Upgrade: websocket" }),
-      { 
-        status: 426, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    )
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
@@ -92,7 +87,7 @@ serve(async (req) => {
           // Convert response to speech using ElevenLabs
           console.log('Converting response to speech...')
           const ttsResponse = await fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream`,
+            `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
             {
               method: 'POST',
               headers: {
@@ -104,7 +99,7 @@ serve(async (req) => {
                 text: responseText,
                 model_id: MODEL_ID,
                 voice_settings: {
-                  stability: 0.5,
+                  stability: 0.75,
                   similarity_boost: 0.75,
                 },
               }),

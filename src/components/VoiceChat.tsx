@@ -11,38 +11,43 @@ interface VoiceChatProps {
 
 class AudioRecorder {
   private stream: MediaStream | null = null;
-  private audioContext: AudioContext | null = null;
-  private processor: ScriptProcessorNode | null = null;
-  private source: MediaStreamAudioSourceNode | null = null;
+  private mediaRecorder: MediaRecorder | null = null;
+  private audioChunks: Blob[] = [];
 
-  constructor(private onAudioData: (audioData: Float32Array) => void) {}
+  constructor(private onAudioData: (audioData: string) => void) {}
 
   async start() {
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          sampleRate: 24000,
-          channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
         }
       });
       
-      this.audioContext = new AudioContext({
-        sampleRate: 24000,
-      });
+      this.mediaRecorder = new MediaRecorder(this.stream);
+      this.audioChunks = [];
       
-      this.source = this.audioContext.createMediaStreamSource(this.stream);
-      this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-      
-      this.processor.onaudioprocess = (e) => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        this.onAudioData(new Float32Array(inputData));
+      this.mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          this.audioChunks.push(event.data);
+        }
       };
       
-      this.source.connect(this.processor);
-      this.processor.connect(this.audioContext.destination);
+      this.mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = () => {
+          const base64Audio = reader.result?.toString().split(',')[1];
+          if (base64Audio) {
+            this.onAudioData(base64Audio);
+          }
+        };
+      };
+      
+      this.mediaRecorder.start(1000); // Collect data every second
     } catch (error) {
       console.error('Error accessing microphone:', error);
       throw error;
@@ -50,22 +55,18 @@ class AudioRecorder {
   }
 
   stop() {
-    if (this.source) {
-      this.source.disconnect();
-      this.source = null;
-    }
-    if (this.processor) {
-      this.processor.disconnect();
-      this.processor = null;
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
     }
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
       this.stream = null;
     }
-    if (this.audioContext) {
-      this.audioContext.close();
-      this.audioContext = null;
-    }
+    this.mediaRecorder = null;
+  }
+
+  isRecording() {
+    return this.mediaRecorder?.state === 'recording';
   }
 }
 
@@ -75,7 +76,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const [isActive, setIsActive] = useState(false);
   const [lastTranscript, setLastTranscript] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
-  const audioRecorderRef = useRef<AudioRecorder | null>(null);
+  const recorderRef = useRef<AudioRecorder | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -89,9 +90,9 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   }, []);
 
   const stopRecording = useCallback(() => {
-    if (audioRecorderRef.current) {
-      audioRecorderRef.current.stop();
-      audioRecorderRef.current = null;
+    if (recorderRef.current) {
+      recorderRef.current.stop();
+      recorderRef.current = null;
     }
     
     if (wsRef.current) {
@@ -100,35 +101,6 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
     }
     
     setIsActive(false);
-  }, []);
-
-  const encodeAudioData = (float32Array: Float32Array): string => {
-    const int16Array = new Int16Array(float32Array.length);
-    for (let i = 0; i < float32Array.length; i++) {
-      const s = Math.max(-1, Math.min(1, float32Array[i]));
-      int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-    
-    const uint8Array = new Uint8Array(int16Array.buffer);
-    let binary = '';
-    const chunkSize = 0x8000;
-    
-    for (let i = 0; i < uint8Array.length; i += chunkSize) {
-      const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
-      binary += String.fromCharCode.apply(null, Array.from(chunk));
-    }
-    
-    return btoa(binary);
-  };
-
-  const handleAudioData = useCallback((audioData: Float32Array) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const encoded = encodeAudioData(audioData);
-      wsRef.current.send(JSON.stringify({
-        type: 'audio',
-        audio: encoded
-      }));
-    }
   }, []);
 
   const startRecording = useCallback(async () => {
@@ -151,8 +123,16 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         console.log("WebSocket connection established");
         
         try {
-          audioRecorderRef.current = new AudioRecorder(handleAudioData);
-          await audioRecorderRef.current.start();
+          recorderRef.current = new AudioRecorder((audioData) => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({
+                type: 'audio',
+                audio: audioData
+              }));
+            }
+          });
+          
+          await recorderRef.current.start();
           setIsActive(true);
         } catch (micError) {
           console.error('Microphone access error:', micError);
@@ -167,14 +147,7 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
 
       wsRef.current.onclose = (event) => {
         console.log("WebSocket connection closed:", event.code, event.reason);
-        if (isActive) {
-          toast({
-            title: "Connection Lost",
-            description: "Voice chat connection was lost. Reconnecting...",
-            variant: "destructive",
-          });
-          setTimeout(startRecording, 1000);
-        }
+        stopRecording();
       };
 
       wsRef.current.onerror = (error) => {
@@ -198,18 +171,9 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
               title: "Assistant",
               description: data.text,
             });
-          } else if (data.type === 'audio') {
-            if (audioRef.current && data.audio) {
-              audioRef.current.src = `data:audio/mp3;base64,${data.audio}`;
-              await audioRef.current.play();
-            }
-          } else if (data.type === 'error') {
-            console.error('Server error:', data.message);
-            toast({
-              title: "Error",
-              description: data.message,
-              variant: "destructive",
-            });
+          } else if (data.type === 'audio' && audioRef.current && data.audio) {
+            audioRef.current.src = `data:audio/mp3;base64,${data.audio}`;
+            await audioRef.current.play();
           }
         } catch (parseError) {
           console.error('Error parsing WebSocket message:', parseError);
@@ -223,14 +187,13 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         variant: "destructive",
       });
     }
-  }, [handleAudioData, toast, stopRecording, isActive]);
+  }, [stopRecording, toast]);
 
   useEffect(() => {
-    startRecording();
     return () => {
       stopRecording();
     };
-  }, [startRecording, stopRecording]);
+  }, [stopRecording]);
 
   return (
     <div className="fixed inset-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-50 flex flex-col items-center justify-center">
@@ -247,19 +210,24 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
         <div className="absolute inset-0 rounded-full bg-blue-500/20" />
         <div 
           className={`absolute inset-2 rounded-full bg-gradient-to-b from-blue-400 to-blue-600 transition-transform ${
-            isActive ? 'scale-110' : ''
+            isActive ? 'scale-110 animate-pulse' : ''
           }`}
-          style={{
-            transform: isActive ? `scale(${1 + Math.sin(Date.now() / 500) * 0.1})` : 'scale(1)',
-          }}
         />
+        <Button
+          onClick={isActive ? stopRecording : startRecording}
+          variant="ghost"
+          size="icon"
+          className="absolute inset-0 w-full h-full rounded-full hover:bg-transparent"
+        >
+          <Mic className={`h-8 w-8 transition-colors ${isActive ? 'text-red-500' : 'text-blue-500'}`} />
+        </Button>
       </div>
 
       <div className="mt-4 text-sm text-muted-foreground">
         {isActive ? (
           <span>{lastTranscript || "Listening..."}</span>
         ) : (
-          <span>Connecting...</span>
+          <span>Click the microphone to start</span>
         )}
       </div>
     </div>

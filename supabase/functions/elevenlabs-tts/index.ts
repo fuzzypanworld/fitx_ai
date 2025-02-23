@@ -7,7 +7,6 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -21,8 +20,8 @@ serve(async (req) => {
 
     console.log('Generating speech for text:', text)
 
-    // Using Charlie's voice ID with non-streaming endpoint for reliability
-    const VOICE_ID = 'IKne3meq5aSn9XLyUdCD'
+    // Using the specified voice ID
+    const VOICE_ID = 'UgBBYS2sOqTuMpoF3BR0'
     const MODEL_ID = 'eleven_monolingual_v1'
 
     const response = await fetch(
@@ -51,7 +50,6 @@ serve(async (req) => {
       throw new Error(`Failed to generate speech: ${errorText}`)
     }
 
-    // Convert audio buffer to base64
     const arrayBuffer = await response.arrayBuffer()
     const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
 
