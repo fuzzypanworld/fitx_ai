@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { HfInference } from 'https://esm.sh/@huggingface/inference@2.3.2'
 
@@ -55,34 +54,34 @@ const unhealthyFoods = new Set([
 const defaultNutritionValues = {
   // Indian breads (values per piece)
   flatbread: {
-    calories: 120,
-    protein_g: 3.5,
-    carbohydrates_total_g: 20,
-    fat_total_g: 3.2
+    calories: 80,
+    protein_g: 2.5,
+    carbohydrates_total_g: 15,
+    fat_total_g: 0.8
   },
   'indian flatbread': {
-    calories: 120,
-    protein_g: 3.5,
-    carbohydrates_total_g: 20,
-    fat_total_g: 3.2
+    calories: 80,
+    protein_g: 2.5,
+    carbohydrates_total_g: 15,
+    fat_total_g: 0.8
   },
   'chapati': {
-    calories: 120,
-    protein_g: 3.5,
-    carbohydrates_total_g: 20,
-    fat_total_g: 3.2
+    calories: 80,
+    protein_g: 2.5,
+    carbohydrates_total_g: 15,
+    fat_total_g: 0.8
   },
   'roti': {
-    calories: 120,
-    protein_g: 3.5,
-    carbohydrates_total_g: 20,
-    fat_total_g: 3.2
+    calories: 80,
+    protein_g: 2.5,
+    carbohydrates_total_g: 15,
+    fat_total_g: 0.8
   },
   'naan': {
-    calories: 260,
-    protein_g: 9,
-    carbohydrates_total_g: 48,
-    fat_total_g: 3.3
+    calories: 180,
+    protein_g: 5,
+    carbohydrates_total_g: 34,
+    fat_total_g: 2.7
   },
   // Asian noodles (values per cup cooked)
   'noodles': {
@@ -235,15 +234,13 @@ serve(async (req) => {
     const isHealthy = !isExplicitlyUnhealthy && (hasHealthyKeywords || nutritionScore >= 2)
 
     const analysis = {
-      foods,
+      foods: foods.map(food => food === 'indian flatbread' ? 'Chapati/Roti' : food),
       calories: Math.round(nutrition.calories),
       protein: Math.round(nutrition.protein_g),
       carbs: Math.round(nutrition.carbohydrates_total_g),
       fat: Math.round(nutrition.fat_total_g),
-      isHealthy,
-      explanation: isHealthy 
-        ? `This meal contains ${Math.round(nutrition.protein_g)}g of protein and a balanced mix of nutrients. ${hasHealthyKeywords ? "It includes healthy preparation methods or ingredients." : ""}`
-        : `This meal is relatively high in ${nutrition.calories > 400 ? 'calories' : nutrition.fat_total_g > 15 ? 'fat' : 'carbohydrates'}. ${isExplicitlyUnhealthy ? "It falls into the category of foods that are best consumed in moderation." : ""}`,
+      isHealthy: !isExplicitlyUnhealthy && (hasHealthyKeywords || nutritionScore >= 2),
+      explanation: `This ${foods[0] === 'indian flatbread' ? 'chapati/roti' : foods[0]} contains ${Math.round(nutrition.calories)} calories with ${Math.round(nutrition.protein_g)}g of protein, ${Math.round(nutrition.carbohydrates_total_g)}g of carbs, and ${Math.round(nutrition.fat_total_g)}g of fat.`,
       healthyAlternative: isExplicitlyUnhealthy 
         ? "Consider healthier alternatives like grilled chicken with vegetables, a grain bowl with lean protein, or a fresh salad with grilled fish."
         : undefined
