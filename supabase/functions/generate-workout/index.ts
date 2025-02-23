@@ -13,7 +13,13 @@ serve(async (req) => {
   }
 
   try {
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!geminiApiKey) {
+      throw new Error('GEMINI_API_KEY environment variable is not set');
+    }
+
     const { goal, level, age, frequency, preferences } = await req.json();
+    console.log('Received request with params:', { goal, level, age, frequency, preferences });
 
     const prompt = `Generate a workout plan with the following criteria:
       - Goal: ${goal}
@@ -41,7 +47,7 @@ serve(async (req) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': Deno.env.get('GEMINI_API_KEY') || '',
+        'x-goog-api-key': geminiApiKey,
       },
       body: JSON.stringify({
         contents: [{
@@ -57,6 +63,12 @@ serve(async (req) => {
         }
       })
     });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('Gemini API error:', errorData);
+      throw new Error(`Gemini API returned status ${response.status}`);
+    }
 
     const data = await response.json();
     console.log('Gemini API response:', data);
