@@ -41,8 +41,11 @@ serve(async (req) => {
   try {
     const { query } = await req.json()
     console.log('Received food query:', query)
+
+    // Ensure query is a single food item
+    const cleanQuery = query.trim().split(',')[0].trim();
     
-    if (!query) {
+    if (!cleanQuery) {
       return new Response(
         JSON.stringify({ error: 'Food query is required' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
@@ -58,8 +61,9 @@ serve(async (req) => {
       )
     }
 
+    // Make sure to pass a single food item query
     const response = await fetch(
-      `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(query)}`,
+      `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(cleanQuery)}`,
       {
         headers: {
           'X-Api-Key': apiKey
@@ -83,10 +87,12 @@ serve(async (req) => {
 
     // Get the first result's nutrition data
     const firstItem = data[0]
-    const calories = Math.round(firstItem.calories || 0)
-    const protein = Math.round(firstItem.protein_g || 0)
-    const carbs = Math.round(firstItem.carbohydrates_total_g || 0)
-    const fat = Math.round(firstItem.fat_total_g || 0)
+    
+    // Ensure we're getting numeric values
+    const calories = Math.round(parseFloat(firstItem.calories) || 0)
+    const protein = Math.round(parseFloat(firstItem.protein_g) || 0)
+    const carbs = Math.round(parseFloat(firstItem.carbohydrates_total_g) || 0)
+    const fat = Math.round(parseFloat(firstItem.fat_total_g) || 0)
 
     // Health assessment
     const isHealthy = 
@@ -95,7 +101,7 @@ serve(async (req) => {
       fat < 30  // Moderate fat content
 
     const analysis = {
-      foods: [firstItem.name || query],
+      foods: [firstItem.name || cleanQuery],
       calories,
       protein,
       carbs,

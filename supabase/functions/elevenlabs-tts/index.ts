@@ -22,23 +22,30 @@ serve(async (req) => {
 
     // Using Mark's voice ID for natural language
     const VOICE_ID = 'MF3mGyEYCl7XYWbV9V6O'
-    const MODEL_ID = 'eleven_multilingual_v2'  // Using the latest model for better quality
+    const MODEL_ID = 'eleven_multilingual_v2'
+
+    const apiKey = Deno.env.get('ELEVENLABS_API_KEY')
+    if (!apiKey) {
+      throw new Error('Missing ElevenLabs API key')
+    }
 
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream`,
       {
         method: 'POST',
         headers: {
           'Accept': 'audio/mpeg',
           'Content-Type': 'application/json',
-          'xi-api-key': Deno.env.get('ELEVENLABS_API_KEY') || '',
+          'xi-api-key': apiKey,
         },
         body: JSON.stringify({
           text,
           model_id: MODEL_ID,
           voice_settings: {
-            stability: 0.75,
-            similarity_boost: 0.75,
+            stability: 0.5,  // Lower stability for more natural variation
+            similarity_boost: 0.8,  // Higher similarity to match Mark's voice better
+            style: 1.0,  // Maximum speaking style transfer
+            use_speaker_boost: true  // Enable speaker boost for clarity
           },
         }),
       }
