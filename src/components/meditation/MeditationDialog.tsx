@@ -21,6 +21,7 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
   const meditationAudioRef = useRef<MeditationAudio | null>(null);
   const [isStarted, setIsStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const cycleRef = useRef<NodeJS.Timeout>();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -37,60 +38,64 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
         audioRef.current = null;
         meditationAudioRef.current = null;
       }
+      if (cycleRef.current) {
+        clearTimeout(cycleRef.current);
+      }
     };
   }, [open, toast]);
 
   const startBreathingCycle = async () => {
-    let currentLap = 0;
-    const totalLaps = 3;
+    try {
+      if (!meditationAudioRef.current || !isStarted) return;
+      let currentCycle = currentLap;
 
-    const breathingCycle = async () => {
-      try {
-        if (!isStarted || !meditationAudioRef.current) return;
-
+      const doCycle = async () => {
         // Inhale phase
         setPhase("inhale");
-        await meditationAudioRef.current.playText("Breathe in deeply");
+        await meditationAudioRef.current?.playText("Breathe in deeply");
         await wait(4000);
-        
+
         if (!isStarted) return;
-        
+
         // Hold phase
         setPhase("hold");
-        await meditationAudioRef.current.playText("Hold your breath");
+        await meditationAudioRef.current?.playText("Hold your breath");
         await wait(4000);
-        
+
         if (!isStarted) return;
-        
+
         // Exhale phase
         setPhase("exhale");
-        await meditationAudioRef.current.playText("Release and breathe out slowly");
+        await meditationAudioRef.current?.playText("Release and breathe out slowly");
         await wait(4000);
-        
+
         if (!isStarted) return;
-        
-        currentLap++;
-        setCurrentLap(currentLap);
-        
-        if (currentLap < totalLaps && isStarted) {
-          await breathingCycle();
+
+        currentCycle++;
+        setCurrentLap(currentCycle);
+
+        if (currentCycle < 3 && isStarted) {
+          cycleRef.current = setTimeout(doCycle, 1000);
         } else if (isStarted) {
-          await meditationAudioRef.current.playText("Well done. Your meditation session is complete. Take a moment to feel the peace within.");
+          await meditationAudioRef.current?.playText(
+            "Well done. Your meditation session is complete. Take a moment to feel the peace within."
+          );
           setIsStarted(false);
           setPhase("inhale");
+          setCurrentLap(0);
         }
-      } catch (error) {
-        console.error('Error in breathing cycle:', error);
-        toast({
-          title: "Error",
-          description: "There was an issue with the meditation guidance. Please try again.",
-          variant: "destructive",
-        });
-        setIsStarted(false);
-      }
-    };
-    
-    await breathingCycle();
+      };
+
+      await doCycle();
+    } catch (error) {
+      console.error("Error in breathing cycle:", error);
+      toast({
+        title: "Error",
+        description: "There was an issue with the meditation guidance. Please try again.",
+        variant: "destructive",
+      });
+      setIsStarted(false);
+    }
   };
 
   const startMeditation = async () => {
@@ -121,7 +126,12 @@ export const MeditationDialog = ({ open, onClose }: MeditationDialogProps) => {
       const confirmed = window.confirm("Are you sure you want to end your meditation session?");
       if (!confirmed) return;
       setIsStarted(false);
+      if (cycleRef.current) {
+        clearTimeout(cycleRef.current);
+      }
     }
+    setCurrentLap(0);
+    setPhase("inhale");
     onClose();
   };
 

@@ -90,18 +90,18 @@ export default function Dashboard() {
       <div className="min-h-screen w-full p-4 md:p-8">
         <Header userName={user?.name} onSignOut={signOut} />
 
-        <main className="max-w-7xl mx-auto space-y-6">
+        <main className="max-w-7xl mx-auto space-y-8">
+          <div>
+            <h2 className="text-2xl font-bold mb-4">Food Analysis</h2>
+            <FoodAnalyzer />
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <QuickActions
               onVoiceChat={() => setShowVoiceChat(true)}
               onGenerateMusic={generateMusic}
               onMeditate={handleMeditate}
             />
-          </div>
-          
-          <div className="mt-8">
-            <h2 className="text-2xl font-bold mb-4">Food Analysis</h2>
-            <FoodAnalyzer />
           </div>
         </main>
       </div>
