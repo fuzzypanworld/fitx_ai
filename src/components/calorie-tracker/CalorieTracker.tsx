@@ -25,7 +25,7 @@ interface ActivityEntry {
 }
 
 const ACTIVITY_CALORIES = {
-  'walking': 4, // calories per minute
+  'walking': 4,
   'running': 11.5,
   'cycling': 8.5,
   'swimming': 9,
@@ -49,26 +49,24 @@ export function CalorieTracker() {
   const [dailyCaloriesBurned, setDailyCaloriesBurned] = useState(0);
   const [previousDayBalance, setPreviousDayBalance] = useState(0);
 
-  // Load entries including previous day's balance
-  useEffect(() => {
-    if (user) {
-      const today = new Date().toISOString().split('T')[0];
-      const yesterday = new Date(new Date().setDate(new Date().getDate() - 1))
-        .toISOString().split('T')[0];
-      
-      loadEntries(today, yesterday);
-    }
-  }, [user]);
-
   const loadEntries = async (today: string, yesterday: string) => {
     try {
+      if (!user) {
+        console.log('No user logged in');
+        return;
+      }
+
       // Load today's food entries
-      const { data: foodData } = await supabase
+      const { data: foodData, error: foodError } = await supabase
         .from('food_entries')
         .select('*')
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .gte('timestamp', today)
         .lt('timestamp', today + 'T23:59:59');
+
+      if (foodError) {
+        throw foodError;
+      }
 
       if (foodData) {
         setFoodEntries(foodData);
@@ -77,12 +75,16 @@ export function CalorieTracker() {
       }
 
       // Load today's activity entries
-      const { data: activityData } = await supabase
+      const { data: activityData, error: activityError } = await supabase
         .from('activity_entries')
         .select('*')
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .gte('timestamp', today)
         .lt('timestamp', today + 'T23:59:59');
+
+      if (activityError) {
+        throw activityError;
+      }
 
       if (activityData) {
         setActivityEntries(activityData);
@@ -94,14 +96,14 @@ export function CalorieTracker() {
       const { data: yesterdayFood } = await supabase
         .from('food_entries')
         .select('calories')
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .gte('timestamp', yesterday)
         .lt('timestamp', yesterday + 'T23:59:59');
 
       const { data: yesterdayActivity } = await supabase
         .from('activity_entries')
         .select('calories_burned')
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .gte('timestamp', yesterday)
         .lt('timestamp', yesterday + 'T23:59:59');
 
@@ -109,22 +111,36 @@ export function CalorieTracker() {
       const yesterdayCaloriesBurned = yesterdayActivity?.reduce((sum, entry) => sum + entry.calories_burned, 0) || 0;
       setPreviousDayBalance(yesterdayCaloriesIn - yesterdayCaloriesBurned);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading entries:', error);
       toast({
         title: "Error",
-        description: "Failed to load your entries",
+        description: "Failed to load your entries. Please try again.",
         variant: "destructive",
       });
     }
   };
 
-  const calculateActivityCalories = (activity: string, duration: number) => {
-    const caloriesPerMinute = ACTIVITY_CALORIES[activity as keyof typeof ACTIVITY_CALORIES] || 5;
-    return Math.round(caloriesPerMinute * duration);
-  };
+  useEffect(() => {
+    if (user) {
+      const today = new Date().toISOString().split('T')[0];
+      const yesterday = new Date(new Date().setDate(new Date().getDate() - 1))
+        .toISOString().split('T')[0];
+      
+      loadEntries(today, yesterday);
+    }
+  }, [user]);
 
   const addFoodEntry = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in to track calories",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!newFood.name || !newFood.servingSize) {
       toast({
         title: "Missing Information",
@@ -135,20 +151,27 @@ export function CalorieTracker() {
     }
 
     try {
-      // Fetch calorie information from API
-      const response = await fetch(`https://api.calorieninjas.com/v1/nutrition?query=${encodeURIComponent(newFood.name + ' ' + newFood.servingSize)}`, {
-        headers: {
-          'X-Api-Key': 'YOUR_API_NINJAS_KEY'
+      // Default to 100 calories if API call fails
+      let calories = 100;
+      try {
+        const response = await fetch(`https://api.calorieninjas.com/v1/nutrition?query=${encodeURIComponent(newFood.name + ' ' + newFood.servingSize)}`, {
+          headers: {
+            'X-Api-Key': 'YOUR_API_NINJAS_KEY'
+          }
+        });
+        
+        const data = await response.json();
+        if (data.items && data.items[0]) {
+          calories = Math.round(data.items[0].calories * parseFloat(newFood.quantity));
         }
-      });
-      
-      const data = await response.json();
-      const calories = Math.round(data.items[0]?.calories || 0 * parseFloat(newFood.quantity));
+      } catch (apiError) {
+        console.error('Error fetching calorie data:', apiError);
+      }
 
       const { data: entry, error } = await supabase
         .from('food_entries')
         .insert({
-          user_id: user?.id,
+          user_id: user.id,
           name: newFood.name,
           calories: calories,
           timestamp: new Date().toISOString(),
@@ -170,13 +193,22 @@ export function CalorieTracker() {
       console.error('Error adding food entry:', error);
       toast({
         title: "Error",
-        description: "Failed to add food entry",
+        description: "Failed to add food entry. Please try again.",
         variant: "destructive",
       });
     }
   };
 
   const addActivityEntry = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in to track activities",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!newActivity.name || !newActivity.duration) {
       toast({
         title: "Missing Information",
@@ -195,7 +227,7 @@ export function CalorieTracker() {
       const { data, error } = await supabase
         .from('activity_entries')
         .insert({
-          user_id: user?.id,
+          user_id: user.id,
           name: newActivity.name,
           duration: parseInt(newActivity.duration),
           calories_burned: caloriesBurned,
@@ -218,10 +250,15 @@ export function CalorieTracker() {
       console.error('Error adding activity entry:', error);
       toast({
         title: "Error",
-        description: "Failed to add activity entry",
+        description: "Failed to add activity entry. Please try again.",
         variant: "destructive",
       });
     }
+  };
+
+  const calculateActivityCalories = (activity: string, duration: number) => {
+    const caloriesPerMinute = ACTIVITY_CALORIES[activity as keyof typeof ACTIVITY_CALORIES] || 5;
+    return Math.round(caloriesPerMinute * duration);
   };
 
   const netCalories = dailyCaloriesIn - dailyCaloriesBurned;
