@@ -150,6 +150,7 @@ function getExerciseRecommendations(calories: number) {
 }
 
 serve(async (req) => {
+  // Add CORS preflight handling
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -165,23 +166,35 @@ serve(async (req) => {
       )
     }
 
+    // Test API Ninjas key access
+    const apiKey = Deno.env.get('API_NINJAS_KEY')
+    console.log('API Ninjas key available:', !!apiKey)
+
     // First get the image description using Hugging Face
     const hfToken = Deno.env.get('HUGGING_FACE_ACCESS_TOKEN')
     if (!hfToken) {
+      console.error('Missing Hugging Face token')
       return new Response(
         JSON.stringify({ error: 'Missing Hugging Face API configuration' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
       )
     }
 
+    console.log('Starting HuggingFace analysis...')
     const hf = new HfInference(hfToken)
-    console.log('Starting image analysis...')
 
-    const result = await hf.imageToText({
-      model: 'Salesforce/blip-image-captioning-base',
-      inputs: imageUrl,
-      wait_for_model: true
-    })
+    let result
+    try {
+      result = await hf.imageToText({
+        model: 'Salesforce/blip-image-captioning-base',
+        inputs: imageUrl,
+        wait_for_model: true
+      })
+      console.log('HuggingFace analysis result:', result)
+    } catch (error) {
+      console.error('HuggingFace analysis error:', error)
+      throw error
+    }
 
     if (!result || !result.generated_text) {
       throw new Error('Invalid response from image analysis')
@@ -195,6 +208,8 @@ serve(async (req) => {
       .split(/,|\band\b/)
       .map(food => food.trim())
       .filter(food => food.length > 0)
+
+    console.log('Detected foods:', detectedFoods)
 
     // Calculate total nutrition by combining all detected foods
     let totalNutrition = {
@@ -226,7 +241,6 @@ serve(async (req) => {
       // If no mapping found, try API Ninjas
       if (!nutritionForFood) {
         try {
-          const apiKey = Deno.env.get('API_NINJAS_KEY');
           if (!apiKey) {
             console.error('Missing API Ninjas key');
             throw new Error('Missing API Ninjas configuration');
@@ -243,6 +257,13 @@ serve(async (req) => {
             }
           );
 
+          // Log the raw response
+          console.log('API Ninjas raw response:', {
+            status: nutritionResponse.status,
+            statusText: nutritionResponse.statusText,
+            headers: Object.fromEntries(nutritionResponse.headers.entries())
+          });
+
           if (!nutritionResponse.ok) {
             const errorText = await nutritionResponse.text();
             console.error(`API Ninjas error (${nutritionResponse.status}):`, errorText);
@@ -250,7 +271,7 @@ serve(async (req) => {
           }
 
           const data = await nutritionResponse.json();
-          console.log('API Ninjas response:', data);
+          console.log('API Ninjas parsed response:', data);
 
           if (data && data[0]) {
             nutritionForFood = data[0];
@@ -330,12 +351,13 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
-    console.error('Error analyzing image:', error)
+    console.error('Error in analyze-food function:', error)
     return new Response(
       JSON.stringify({ 
         error: 'Failed to analyze image',
         details: error.message,
-        stack: error.stack
+        stack: error.stack,
+        name: error.name
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
