@@ -4,8 +4,37 @@ import { HfInference } from 'https://esm.sh/@huggingface/inference@2.3.2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 }
+
+// Food mappings for common items that API might not recognize
+const foodMappings: { [key: string]: string } = {
+  // Indian foods
+  'chapati': 'flatbread',
+  'roti': 'flatbread',
+  'naan': 'flatbread',
+  'dal': 'lentils',
+  'daal': 'lentils',
+  'paratha': 'flatbread',
+  // Asian foods
+  'noodles': 'chow mein noodles',
+  'ramen': 'noodles',
+  'udon': 'noodles',
+  'pad thai': 'noodles',
+  // Common variations
+  'burger': 'hamburger',
+  'pizza slice': 'pizza',
+  'french fries': 'fries'
+}
+
+// Explicitly defined unhealthy foods
+const unhealthyFoods = new Set([
+  'burger', 'hamburger', 'cheeseburger',
+  'pizza', 'fries', 'french fries',
+  'fried chicken', 'hot dog', 'ice cream',
+  'cake', 'donut', 'candy', 'chips',
+  'soda', 'cookie', 'pie'
+])
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -19,10 +48,7 @@ serve(async (req) => {
     if (!imageUrl) {
       return new Response(
         JSON.stringify({ error: 'Image URL is required' }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400
-        }
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       )
     }
 
@@ -51,13 +77,21 @@ serve(async (req) => {
     const description = result.generated_text.toLowerCase()
     console.log('Food description:', description)
 
-    // Extract the main food item for API query
-    const mainFood = description
+    // Extract and map the main food item for API query
+    let mainFood = description
       .split(/,|\band\b/)[0]
       .trim()
       .replace(/^(a|an|the)\s+/, '')
 
-    console.log('Querying nutrition for:', mainFood)
+    // Check if we need to map this food to a recognized term
+    for (const [key, value] of Object.entries(foodMappings)) {
+      if (description.includes(key)) {
+        mainFood = value
+        break
+      }
+    }
+
+    console.log('Mapped food query:', mainFood)
 
     // Get nutritional info from API Ninjas
     const apiKey = Deno.env.get('API_NINJAS_KEY')
@@ -85,12 +119,19 @@ serve(async (req) => {
     const nutritionData = await nutritionResponse.json()
     console.log('Nutrition data:', nutritionData)
 
-    // In case no nutrition data is found, provide default values
-    const nutrition = nutritionData[0] || {
-      calories: 0,
-      protein_g: 0,
-      carbohydrates_total_g: 0,
-      fat_total_g: 0
+    // Default values based on common serving sizes
+    const defaultNutrition = {
+      chapati: { calories: 120, protein_g: 3, carbohydrates_total_g: 20, fat_total_g: 3 },
+      noodles: { calories: 220, protein_g: 7, carbohydrates_total_g: 43, fat_total_g: 2 },
+      flatbread: { calories: 130, protein_g: 3, carbohydrates_total_g: 23, fat_total_g: 3 }
+    }
+
+    // Use API data or fallback to defaults
+    const nutrition = nutritionData[0] || defaultNutrition[mainFood as keyof typeof defaultNutrition] || {
+      calories: 200,
+      protein_g: 5,
+      carbohydrates_total_g: 25,
+      fat_total_g: 8
     }
 
     const foods = description
@@ -98,14 +139,21 @@ serve(async (req) => {
       .map(food => food.trim())
       .filter(food => food.length > 0)
 
-    // Determine if food is healthy based on nutritional values
-    const isHealthy = (
-      nutrition.protein_g > 10 || // Good protein content
-      (nutrition.calories < 400 && nutrition.fat_total_g < 15) || // Low calorie and fat
-      /salad|vegetable|fruit|lean|fish|grilled/.test(description) // Healthy keywords
+    // More comprehensive health assessment
+    const isExplicitlyUnhealthy = foods.some(food => 
+      Array.from(unhealthyFoods).some(unhealthy => food.includes(unhealthy))
     )
 
-    const unhealthyMatch = /pizza|burger|fries|fried|processed|candy|cake|dessert/.test(description)
+    const hasHealthyKeywords = /salad|vegetable|fruit|lean|fish|grilled|steamed|boiled/.test(description)
+    
+    const nutritionScore = (
+      (nutrition.protein_g > 15 ? 1 : 0) + // Good protein
+      (nutrition.calories < 400 ? 1 : 0) + // Reasonable calories
+      (nutrition.fat_total_g < 15 ? 1 : 0) + // Moderate fat
+      ((nutrition.carbohydrates_total_g / nutrition.protein_g) < 5 ? 1 : 0) // Good carb-to-protein ratio
+    )
+
+    const isHealthy = !isExplicitlyUnhealthy && (hasHealthyKeywords || nutritionScore >= 2)
 
     const analysis = {
       foods,
@@ -115,10 +163,10 @@ serve(async (req) => {
       fat: Math.round(nutrition.fat_total_g),
       isHealthy,
       explanation: isHealthy 
-        ? "This looks like a healthy, nutritious meal! The nutritional values show a good balance of nutrients."
-        : "While this food might be tasty, the nutritional analysis suggests there might be healthier alternatives available.",
-      healthyAlternative: unhealthyMatch 
-        ? "Consider trying a fresh salad with grilled chicken or fish for a more nutritious option with better protein content and fewer calories."
+        ? `This meal contains ${Math.round(nutrition.protein_g)}g of protein and a balanced mix of nutrients. ${hasHealthyKeywords ? "It includes healthy preparation methods or ingredients." : ""}`
+        : `This meal is relatively high in ${nutrition.calories > 400 ? 'calories' : nutrition.fat_total_g > 15 ? 'fat' : 'carbohydrates'}. ${isExplicitlyUnhealthy ? "It falls into the category of foods that are best consumed in moderation." : ""}`,
+      healthyAlternative: isExplicitlyUnhealthy 
+        ? "Consider healthier alternatives like grilled chicken with vegetables, a grain bowl with lean protein, or a fresh salad with grilled fish."
         : undefined
     }
 
@@ -135,10 +183,7 @@ serve(async (req) => {
         details: error.message,
         stack: error.stack
       }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
-      }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }
 })
