@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 const corsHeaders = {
@@ -6,7 +5,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const VOICE_ID = 'UgBBYS2sOqTuMpoF3BR0'
+const VOICE_ID = 'IKne3meq5aSn9XLyUdCD'
 const MODEL_ID = 'eleven_multilingual_v2'
 
 serve(async (req) => {
@@ -78,25 +77,7 @@ serve(async (req) => {
                 topK: 40,
                 topP: 0.95,
                 maxOutputTokens: 1024,
-              },
-              safetySettings: [
-                {
-                  category: "HARM_CATEGORY_HARASSMENT",
-                  threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                  category: "HARM_CATEGORY_HATE_SPEECH",
-                  threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                  category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                  threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                  category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                  threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                }
-              ]
+              }
             })
           })
 
