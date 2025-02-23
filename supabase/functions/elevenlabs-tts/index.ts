@@ -20,9 +20,9 @@ serve(async (req) => {
 
     console.log('Generating speech for text:', text)
 
-    // Using the specified voice ID for Laura
-    const VOICE_ID = 'FGY2WhTYpPnrIDTdsKH5'
-    const MODEL_ID = 'eleven_monolingual_v1'
+    // Using Mark's voice ID for natural language
+    const VOICE_ID = 'MF3mGyEYCl7XYWbV9V6O'
+    const MODEL_ID = 'eleven_multilingual_v2'  // Using the latest model for better quality
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
