@@ -28,10 +28,9 @@ serve(async (req) => {
       const data = JSON.parse(event.data)
       
       if (data.type === 'audio') {
-        // Process audio using Whisper API
+        // Process audio using Whisper API for transcription
         const audioData = Uint8Array.from(atob(data.audio), c => c.charCodeAt(0))
         
-        // Create form data for Whisper API
         const formData = new FormData()
         formData.append('file', new Blob([audioData]), 'audio.webm')
         formData.append('model', 'whisper-1')
@@ -53,31 +52,52 @@ serve(async (req) => {
         // Send transcription back to client
         socket.send(JSON.stringify({ type: 'transcript', text }))
 
-        // Generate chat response using OpenAI
-        const chatResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        // Generate chat response using Gemini
+        const geminiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
             'Content-Type': 'application/json',
+            'x-goog-api-key': Deno.env.get('GEMINI_API_KEY') || '',
           },
           body: JSON.stringify({
-            model: 'gpt-3.5-turbo',
-            messages: [
-              { 
-                role: 'system', 
-                content: 'You are a helpful AI fitness assistant. Keep responses brief and focused on health, fitness, and wellbeing.' 
+            contents: [{
+              parts: [{
+                text: `You are a helpful AI fitness assistant. Keep responses brief and focused on health, fitness, and wellbeing. User message: ${text}`
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.7,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 1024,
+            },
+            safetySettings: [
+              {
+                category: "HARM_CATEGORY_HARASSMENT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
               },
-              { role: 'user', content: text }
-            ],
-          }),
+              {
+                category: "HARM_CATEGORY_HATE_SPEECH",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
+              },
+              {
+                category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
+              },
+              {
+                category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
+              }
+            ]
+          })
         })
 
-        if (!chatResponse.ok) {
+        if (!geminiResponse.ok) {
           throw new Error('Failed to generate response')
         }
 
-        const chatResult = await chatResponse.json()
-        const responseText = chatResult.choices[0].message.content
+        const geminiResult = await geminiResponse.json()
+        const responseText = geminiResult.candidates[0].content.parts[0].text
 
         // Generate speech from response text using ElevenLabs
         const ttsResponse = await fetch(
