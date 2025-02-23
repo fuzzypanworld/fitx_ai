@@ -51,6 +51,54 @@ const unhealthyFoods = new Set([
   'soda', 'cookie', 'pie'
 ])
 
+// Default nutrition values for common foods that might not be in the API
+const defaultNutritionValues = {
+  // Indian breads (values per piece)
+  flatbread: {
+    calories: 120,
+    protein_g: 3.5,
+    carbohydrates_total_g: 20,
+    fat_total_g: 3.2
+  },
+  'indian flatbread': {
+    calories: 120,
+    protein_g: 3.5,
+    carbohydrates_total_g: 20,
+    fat_total_g: 3.2
+  },
+  'chapati': {
+    calories: 120,
+    protein_g: 3.5,
+    carbohydrates_total_g: 20,
+    fat_total_g: 3.2
+  },
+  'roti': {
+    calories: 120,
+    protein_g: 3.5,
+    carbohydrates_total_g: 20,
+    fat_total_g: 3.2
+  },
+  'naan': {
+    calories: 260,
+    protein_g: 9,
+    carbohydrates_total_g: 48,
+    fat_total_g: 3.3
+  },
+  // Asian noodles (values per cup cooked)
+  'noodles': {
+    calories: 220,
+    protein_g: 7,
+    carbohydrates_total_g: 43,
+    fat_total_g: 2
+  },
+  'chow mein noodles': {
+    calories: 220,
+    protein_g: 7,
+    carbohydrates_total_g: 43,
+    fat_total_g: 2
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -105,7 +153,7 @@ serve(async (req) => {
 
     if (hasIndianBreadIndicators) {
       console.log('Detected possible Indian bread from keywords')
-      mainFood = 'flatbread'
+      mainFood = 'indian flatbread'
     } else {
       // Check normal food mappings
       for (const [key, value] of Object.entries(foodMappings)) {
@@ -118,44 +166,37 @@ serve(async (req) => {
 
     console.log('Mapped food query:', mainFood)
 
-    // Get nutritional info from API Ninjas
-    const apiKey = Deno.env.get('API_NINJAS_KEY')
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: 'Missing API Ninjas configuration' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-      )
-    }
+    // First check our default values
+    let nutrition = defaultNutritionValues[mainFood as keyof typeof defaultNutritionValues]
 
-    const nutritionResponse = await fetch(
-      `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(mainFood)}`, 
-      {
-        headers: {
-          'X-Api-Key': apiKey,
-          'Content-Type': 'application/json'
-        }
+    // If not in our defaults, try the API
+    if (!nutrition) {
+      const apiKey = Deno.env.get('API_NINJAS_KEY')
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({ error: 'Missing API Ninjas configuration' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+        )
       }
-    )
 
-    if (!nutritionResponse.ok) {
-      throw new Error('Failed to fetch nutrition data')
-    }
+      const nutritionResponse = await fetch(
+        `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(mainFood)}`, 
+        {
+          headers: {
+            'X-Api-Key': apiKey,
+            'Content-Type': 'application/json'
+          }
+        }
+      )
 
-    const nutritionData = await nutritionResponse.json()
-    console.log('Nutrition data:', nutritionData)
+      if (!nutritionResponse.ok) {
+        throw new Error('Failed to fetch nutrition data')
+      }
 
-    // Default values based on common serving sizes
-    const defaultNutrition = {
-      flatbread: { calories: 120, protein_g: 3, carbohydrates_total_g: 20, fat_total_g: 3 },
-      noodles: { calories: 220, protein_g: 7, carbohydrates_total_g: 43, fat_total_g: 2 }
-    }
-
-    // Use API data or fallback to defaults
-    const nutrition = nutritionData[0] || defaultNutrition[mainFood as keyof typeof defaultNutrition] || {
-      calories: 200,
-      protein_g: 5,
-      carbohydrates_total_g: 25,
-      fat_total_g: 8
+      const nutritionData = await nutritionResponse.json()
+      console.log('API Nutrition data:', nutritionData)
+      
+      nutrition = nutritionData[0] || defaultNutritionValues['flatbread'] // Fallback to flatbread values
     }
 
     // Clean up the foods array and map any recognized terms
