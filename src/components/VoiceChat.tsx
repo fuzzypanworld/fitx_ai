@@ -1,3 +1,4 @@
+
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -79,6 +80,20 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const isPlayingRef = useRef(false);
 
+  const stopRecording = useCallback(() => {
+    if (audioRecorderRef.current) {
+      audioRecorderRef.current.stop();
+      audioRecorderRef.current = null;
+    }
+    
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    
+    setIsActive(false);
+  }, []);
+
   const encodeAudioData = (float32Array: Float32Array): string => {
     const int16Array = new Int16Array(float32Array.length);
     for (let i = 0; i < float32Array.length; i++) {
@@ -97,6 +112,16 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
     
     return btoa(binary);
   };
+
+  const handleAudioData = useCallback((audioData: Float32Array) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const encoded = encodeAudioData(audioData);
+      wsRef.current.send(JSON.stringify({
+        type: 'audio',
+        audio: encoded
+      }));
+    }
+  }, []);
 
   const playAudioChunk = async (audioData: Uint8Array) => {
     if (!audioContextRef.current) {
@@ -131,16 +156,6 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       }
     }
   };
-
-  const handleAudioData = useCallback((audioData: Float32Array) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const encoded = encodeAudioData(audioData);
-      wsRef.current.send(JSON.stringify({
-        type: 'audio',
-        audio: encoded
-      }));
-    }
-  }, []);
 
   const startRecording = useCallback(async () => {
     try {
@@ -233,20 +248,6 @@ const VoiceChat = ({ onClose }: VoiceChatProps) => {
       });
     }
   }, [handleAudioData, toast, stopRecording, isActive]);
-
-  const stopRecording = useCallback(() => {
-    if (audioRecorderRef.current) {
-      audioRecorderRef.current.stop();
-      audioRecorderRef.current = null;
-    }
-    
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    
-    setIsActive(false);
-  }, []);
 
   useEffect(() => {
     // Start recording automatically when component mounts
